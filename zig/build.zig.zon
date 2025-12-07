@@ -1,0 +1,13 @@
+.{
+    .name = .zig,
+    .version = "0.0.1",
+    .dependencies = .{
+        .glfw = .{
+            .url = "git+https://github.com/glfw/glfw.git#162896e5b9a40dc382c5c438cd12c90a5ff86ddd",
+            .hash = "N-V-__8AAM8HSgD_XmRIgecayKfebETrWaRHiz9rZUK-gR7p",
+        },
+    },
+    .minimum_zig_version = "0.15.2",
+    .paths = .{""},
+    .fingerprint = 0xc1ce108137f72712,
+}
