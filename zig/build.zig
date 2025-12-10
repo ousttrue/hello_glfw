@@ -6,6 +6,7 @@ const Sample = struct {
     name: []const u8,
     root_source_file: []const u8,
     use_sokol: bool = false,
+    use_imgui: bool = false,
 };
 
 const samples = [_]Sample{
@@ -18,6 +19,11 @@ const samples = [_]Sample{
         .root_source_file = "src/sokol.zig",
         .use_sokol = true,
     },
+    .{
+        .name = "glfw_imgui",
+        .root_source_file = "src/imgui.zig",
+        .use_imgui = true,
+    },
 };
 
 pub fn build(b: *std.Build) !void {
@@ -29,8 +35,13 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
+    const imgui_dep = b.dependency("imgui", .{
+        .target = target,
+        .optimize = optimize,
+    });
+
     for (samples) |sample| {
-        try build_sample(b, target, optimize, sample, sokol_dep);
+        try build_sample(b, target, optimize, sample, sokol_dep, imgui_dep);
     }
 }
 
@@ -40,11 +51,14 @@ fn build_sample(
     optimize: std.builtin.OptimizeMode,
     sample: Sample,
     sokol_dep: *std.Build.Dependency,
+    imgui_dep: *std.Build.Dependency,
 ) !void {
     const mod = b.addModule(sample.name, .{
         .target = target,
         .optimize = optimize,
         .root_source_file = b.path(sample.root_source_file),
+        .link_libc = true,
+        .link_libcpp = true,
     });
 
     const exe = b.addExecutable(.{
@@ -79,5 +93,30 @@ fn build_sample(
         exe.addIncludePath(sokol_dep.path("src/sokol/c"));
 
         mod.addImport("sokol", sokol_dep.module("sokol"));
+    }
+
+    if (sample.use_imgui) {
+        exe.addCSourceFiles(.{
+            .root = imgui_dep.path(""),
+            .files = &.{
+                "imgui.cpp",
+                "imgui_demo.cpp",
+                "imgui_draw.cpp",
+                "imgui_tables.cpp",
+                "imgui_widgets.cpp",
+            },
+            .flags = &.{},
+        });
+        exe.linkSystemLibrary("X11");
+
+        //
+        exe.addIncludePath(imgui_dep.path(""));
+        exe.addCSourceFiles(.{
+            .files = &.{
+                "imgui_helper/imgui_without_mangling.cpp",
+                "imgui_helper/imgui_impl_glfw.cpp",
+                "imgui_helper/imgui_impl_opengl3.cpp",
+            },
+        });
     }
 }

@@ -43,6 +43,14 @@ const srcs_wayland = [_][]const u8{
     "wl_window.c",
 };
 
+const srcs_x11 = [_][]const u8{
+    "x11_init.c",
+    "x11_monitor.c",
+    "x11_window.c",
+    "xkb_unicode.c",
+    "glx_context.c",
+};
+
 const flags_wayland = [_][]const u8{
     "-D_GLFW_WAYLAND",
 };
