@@ -80,10 +80,8 @@ export fn Visitor(
     parent: c.CXCursor,
     client_data: c.CXClientData,
 ) c.CXChildVisitResult {
-    _ = parent;
-
     const data: *Data = @ptrCast(@alignCast(client_data));
-    return data.onVisit(cursor);
+    return data.onVisit(cursor, parent);
 }
 
 const Data = struct {
@@ -100,25 +98,49 @@ const Data = struct {
         _ = this;
     }
 
-    fn onVisit(this: *@This(), _cursor: c.CXCursor) c.CXChildVisitResult {
+    fn onVisit(
+        this: *@This(),
+        _cursor: c.CXCursor,
+        _parent: c.CXCursor,
+    ) c.CXChildVisitResult {
         var cursor = CXCursor.init(_cursor);
         defer cursor.deinit();
 
+        var parent = CXCursor.init(_parent);
+        defer parent.deinit();
+
         const loc = cursor.getLocation();
         if (!std.mem.eql(u8, loc.path, this.entry_point)) {
+            // skip
             return c.CXVisit_Continue;
         }
 
-        std.log.debug("[{:03}] {s}:{}:{} => <{s}> {s}", .{
-            this.i,
-            std.fs.path.basename(loc.path),
-            loc.line,
-            loc.col,
-            cursor.kindName(),
-            cursor.getDisplay(),
-        });
-        this.i += 1;
-        return c.CXChildVisit_Continue;
+        switch (cursor.cursor.kind) {
+            c.CXCursor_MacroExpansion => {
+                // skip
+            },
+            else => {
+                std.log.debug("[{:03}] {s}:{}:{} => <{s}(0x{x})> <{s}(0x{x})> {s}", .{
+                    this.i,
+                    std.fs.path.basename(loc.path),
+                    loc.line,
+                    loc.col,
+                    // parent
+                    parent.kindName(),
+                    c.clang_hashCursor(parent.cursor),
+                    // cursor
+                    cursor.kindName(),
+                    c.clang_hashCursor(cursor.cursor),
+                    cursor.getDisplay(),
+                });
+                this.i += 1;
+            },
+        }
+
+        return switch (cursor.cursor.kind) {
+            c.CXCursor_Namespace => c.CXChildVisit_Recurse,
+            else => c.CXChildVisit_Continue,
+        };
     }
 };
 
