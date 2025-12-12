@@ -10,18 +10,23 @@ const Sample = struct {
 };
 
 const samples = [_]Sample{
+    // .{
+    //     .name = "glfw_triangle",
+    //     .root_source_file = "src/simple.zig",
+    // },
+    // .{
+    //     .name = "sokol_glfw_triangle",
+    //     .root_source_file = "src/sokol.zig",
+    //     .use_sokol = true,
+    // },
+    // .{
+    //     .name = "glfw_imgui",
+    //     .root_source_file = "src/imgui.zig",
+    //     .use_imgui = true,
+    // },
     .{
-        .name = "glfw_triangle",
-        .root_source_file = "src/simple.zig",
-    },
-    .{
-        .name = "sokol_glfw_triangle",
-        .root_source_file = "src/sokol.zig",
-        .use_sokol = true,
-    },
-    .{
-        .name = "glfw_imgui",
-        .root_source_file = "src/imgui.zig",
+        .name = "glfw_imgui_clang",
+        .root_source_file = "src/imgui_cltgen.zig",
         .use_imgui = true,
     },
 };
@@ -40,12 +45,24 @@ pub fn build(b: *std.Build) !void {
         .optimize = optimize,
     });
 
-    for (samples) |sample| {
-        try build_sample(b, target, optimize, sample, sokol_dep, imgui_dep);
-    }
-
-    const cltgen = build_ClangTranslator(b, target, optimize);
+    const cltgen = build_ClangTranslator(b, b.graph.host, optimize);
     b.installArtifact(cltgen);
+
+    const cltgen_run = b.addRunArtifact(cltgen);
+    cltgen_run.addFileArg(imgui_dep.path("imgui.h"));
+    const imgui_mod_src = cltgen_run.captureStdOut();
+    const imgui_src_install = b.addInstallFile(imgui_mod_src, "src/imgui.zig");
+    b.getInstallStep().dependOn(&imgui_src_install.step);
+
+    const imgui_mod = b.addModule("imgui", .{
+        .target = target,
+        .optimize = optimize,
+        .root_source_file = imgui_mod_src,
+    });
+
+    for (samples) |sample| {
+        try build_sample(b, target, optimize, sample, sokol_dep, imgui_dep, imgui_mod);
+    }
 }
 
 pub fn build_ClangTranslator(
@@ -92,6 +109,7 @@ fn build_sample(
     sample: Sample,
     sokol_dep: *std.Build.Dependency,
     imgui_dep: *std.Build.Dependency,
+    imgui_mod: *std.Build.Module,
 ) !void {
     const mod = b.addModule(sample.name, .{
         .target = target,
@@ -136,6 +154,8 @@ fn build_sample(
     }
 
     if (sample.use_imgui) {
+        mod.addImport("imgui", imgui_mod);
+
         exe.addCSourceFiles(.{
             .root = imgui_dep.path(""),
             .files = &.{

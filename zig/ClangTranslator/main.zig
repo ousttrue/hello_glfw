@@ -28,6 +28,9 @@ pub fn main() !void {
     defer _ = gpa.detectLeaks();
     const allocator = gpa.allocator();
 
+    var writer_buf: [1024]u8 = undefined;
+    var writer = std.fs.File.stdout().writer(&writer_buf);
+
     var command_line = std.ArrayList(*const u8){};
     defer command_line.deinit(allocator);
 
@@ -65,7 +68,7 @@ pub fn main() !void {
     }
     defer c.clang_disposeTranslationUnit(tu);
 
-    var data = Data.init(entry_point);
+    var data = Data.init(&writer.interface, entry_point);
     defer data.deinit();
 
     _ = c.clang_visitChildren(
@@ -85,11 +88,13 @@ export fn Visitor(
 }
 
 const Data = struct {
+    writer: *std.Io.Writer,
     entry_point: []const u8,
     i: u32 = 0,
 
-    fn init(entry_point: []const u8) @This() {
+    fn init(writer: *std.Io.Writer, entry_point: []const u8) @This() {
         return .{
+            .writer = writer,
             .entry_point = entry_point,
         };
     }
