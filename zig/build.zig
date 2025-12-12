@@ -43,6 +43,46 @@ pub fn build(b: *std.Build) !void {
     for (samples) |sample| {
         try build_sample(b, target, optimize, sample, sokol_dep, imgui_dep);
     }
+
+    const cltgen = build_ClangTranslator(b, target, optimize);
+    b.installArtifact(cltgen);
+}
+
+pub fn build_ClangTranslator(
+    b: *std.Build,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+) *std.Build.Step.Compile {
+    const t = b.addTranslateC(.{
+        .target = target,
+        .optimize = optimize,
+        .root_source_file = .{ .cwd_relative = "/usr/lib/llvm/20/include/clang-c/Index.h" },
+        .use_clang = true,
+    });
+    t.addIncludePath(.{ .cwd_relative = "/usr/lib/llvm/20/include" });
+
+    const name = "cltgen";
+    const mod = b.addModule(name, .{
+        .target = target,
+        .optimize = optimize,
+        .root_source_file = b.path("ClangTranslator/main.zig"),
+        .imports = &.{
+            .{
+                .name = "clang",
+                .module = t.createModule(),
+            },
+        },
+        .link_libc = true,
+        .link_libcpp = true,
+    });
+    mod.linkSystemLibrary("clang", .{});
+    mod.addLibraryPath(.{ .cwd_relative = "/usr/lib/llvm/20/lib64" });
+
+    const exe = b.addExecutable(.{
+        .name = name,
+        .root_module = mod,
+    });
+    return exe;
 }
 
 fn build_sample(
