@@ -44,32 +44,31 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-
     const cltgen = build_ClangTranslator(b, b.graph.host, optimize);
     b.installArtifact(cltgen);
-
     const cltgen_run = b.addRunArtifact(cltgen);
     cltgen_run.addFileArg(imgui_dep.path("imgui.h"));
     cltgen_run.addFileArg(imgui_dep.path("backends/imgui_impl_glfw.h"));
     cltgen_run.addFileArg(imgui_dep.path("backends/imgui_impl_opengl3.h"));
-
     const imgui_mod_src = cltgen_run.captureStdOut();
     const imgui_src_install = b.addInstallFile(imgui_mod_src, "src/imgui.zig");
     b.getInstallStep().dependOn(&imgui_src_install.step);
-
     const imgui_mod = b.addModule("imgui", .{
         .target = target,
         .optimize = optimize,
-        .root_source_file = imgui_mod_src,
+        // .root_source_file = imgui_mod_src,
+        .root_source_file = b.path("zig-out/src/imgui.zig"),
     });
 
-    // const samples_step = b.step("samples", "samples");
-    if (b.option(bool, "samples", "samples") orelse false) {
-        for (samples) |sample| {
-            _ = try build_sample(b, target, optimize, sample, sokol_dep, imgui_dep, imgui_mod);
-            // samples_step.dependOn(&sample_compiled.step);
-        }
+    // if (b.option(bool, "samples", "samples") orelse false) {
+    for (samples) |sample| {
+        const sample_compiled = try build_sample(b, target, optimize, sample, sokol_dep, imgui_dep);
+        // if (sample.use_imgui) {
+            sample_compiled.root_module.addImport("imgui", imgui_mod);
+            sample_compiled.step.dependOn(&imgui_src_install.step);
+        // }
     }
+    // }
 }
 
 pub fn build_ClangTranslator(
@@ -105,7 +104,6 @@ pub fn build_ClangTranslator(
     const exe = b.addExecutable(.{
         .name = name,
         .root_module = mod,
-        .use_llvm = true,
     });
     return exe;
 }
@@ -117,8 +115,8 @@ fn build_sample(
     sample: Sample,
     sokol_dep: *std.Build.Dependency,
     imgui_dep: *std.Build.Dependency,
-    imgui_mod: *std.Build.Module,
 ) !*std.Build.Step.Compile {
+    _ = sokol_dep;
     const mod = b.addModule(sample.name, .{
         .target = target,
         .optimize = optimize,
@@ -130,7 +128,6 @@ fn build_sample(
     const exe = b.addExecutable(.{
         .name = sample.name,
         .root_module = mod,
-        .use_llvm = true,
     });
     b.installArtifact(exe);
 
@@ -144,27 +141,25 @@ fn build_sample(
     exe.linkLibrary(glad_lib);
     exe.root_module.addImport("glad", glad_lib.root_module);
 
-    if (sample.use_sokol) {
-        const t = b.addTranslateC(.{
-            .target = target,
-            .optimize = optimize,
-            .root_source_file = b.path("src/glfw_glue.h"),
-        });
-        t.addIncludePath(sokol_dep.path("src/sokol/c"));
-        mod.addImport("glfw", t.createModule());
-
-        exe.addCSourceFiles(.{
-            .root = b.path("src"),
-            .files = &.{"glfw_glue.c"},
-        });
-        exe.addIncludePath(sokol_dep.path("src/sokol/c"));
-
-        mod.addImport("sokol", sokol_dep.module("sokol"));
-    }
+    // if (sample.use_sokol) {
+    //     const t = b.addTranslateC(.{
+    //         .target = target,
+    //         .optimize = optimize,
+    //         .root_source_file = b.path("src/glfw_glue.h"),
+    //     });
+    //     t.addIncludePath(sokol_dep.path("src/sokol/c"));
+    //     mod.addImport("glfw", t.createModule());
+    //
+    //     exe.addCSourceFiles(.{
+    //         .root = b.path("src"),
+    //         .files = &.{"glfw_glue.c"},
+    //     });
+    //     exe.addIncludePath(sokol_dep.path("src/sokol/c"));
+    //
+    //     mod.addImport("sokol", sokol_dep.module("sokol"));
+    // }
 
     if (sample.use_imgui) {
-        mod.addImport("imgui", imgui_mod);
-
         exe.addCSourceFiles(.{
             .root = imgui_dep.path(""),
             .files = &.{
@@ -176,17 +171,17 @@ fn build_sample(
             },
             .flags = &.{},
         });
-        exe.linkSystemLibrary("X11");
+        // exe.linkSystemLibrary("X11");
 
         //
-        exe.addIncludePath(imgui_dep.path(""));
-        exe.addCSourceFiles(.{
-            .files = &.{
-                "imgui_helper/imgui_without_mangling.cpp",
-                "imgui_helper/imgui_impl_glfw.cpp",
-                "imgui_helper/imgui_impl_opengl3.cpp",
-            },
-        });
+        // exe.addIncludePath(imgui_dep.path(""));
+        // exe.addCSourceFiles(.{
+        //     .files = &.{
+        //         "imgui_helper/imgui_without_mangling.cpp",
+        //         "imgui_helper/imgui_impl_glfw.cpp",
+        //         "imgui_helper/imgui_impl_opengl3.cpp",
+        //     },
+        // });
     }
 
     return exe;

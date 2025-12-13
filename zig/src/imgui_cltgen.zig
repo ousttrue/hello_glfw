@@ -85,12 +85,13 @@ pub fn main() void {
     //         return 1;
     //     glfwMakeContextCurrent(window);
     //     glfwSwapInterval(1); // Enable vsync
-    //
-    //     // Setup Dear ImGui context
+
+        // Setup Dear ImGui context
     //     IMGUI_CHECKVERSION();
 
         // ImGui::CreateContext();
-    //     ImGuiIO& io = ImGui::GetIO(); (void)io;
+        const io = imgui.GetIO();
+    _ = io;
     //     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     //     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
     //

@@ -4,6 +4,8 @@ const std = @import("std");
 const c = @import("clang");
 const CIndexParser = @import("CIndexParsr.zig");
 const CXCursor = @import("CXCursor.zig");
+const CXString = @import("CXString.zig");
+const CXTypeKind = @import("cxtype_kind.zig").CXTypeKind;
 
 pub fn main() !void {
     if (std.os.argv.len < 2) {
@@ -16,6 +18,7 @@ pub fn main() !void {
 
     var writer_buf: [1024]u8 = undefined;
     var writer = std.fs.File.stdout().writer(&writer_buf);
+    defer writer.interface.flush() catch @panic("OOM");
 
     var cindex_parser = if (std.os.argv.len == 2)
         try CIndexParser.fromSingleHeader(allocator, std.os.argv[1])
@@ -47,6 +50,7 @@ const ClientData = struct {
     include_dirs: []const []const u8,
     entry_point: []const u8,
     i: u32 = 0,
+    name_count: std.StringHashMap(u32),
 
     export fn Visitor(
         cursor: c.CXCursor,
@@ -54,7 +58,9 @@ const ClientData = struct {
         client_data: c.CXClientData,
     ) c.CXChildVisitResult {
         const data: *@This() = @ptrCast(@alignCast(client_data));
-        return data.onVisit(cursor, parent);
+        return data.onVisit(cursor, parent) catch {
+            return c.CXChildVisit_Break;
+        };
     }
 
     fn init(
@@ -68,18 +74,23 @@ const ClientData = struct {
             .writer = writer,
             .include_dirs = include_dirs,
             .entry_point = entry_point,
+            .name_count = .init(allocator),
         };
     }
 
     fn deinit(this: *@This()) void {
-        _ = this;
+        var it = this.name_count.keyIterator();
+        while (it.next()) |key| {
+            this.allocator.free(key.*);
+        }
+        this.name_count.deinit();
     }
 
     fn onVisit(
         this: *@This(),
         _cursor: c.CXCursor,
         _parent: c.CXCursor,
-    ) c.CXChildVisitResult {
+    ) !c.CXChildVisitResult {
         var cursor = CXCursor.init(_cursor);
         defer cursor.deinit();
 
@@ -87,9 +98,40 @@ const ClientData = struct {
         defer parent.deinit();
 
         const loc = cursor.getLocation();
+        _ = loc;
         if (!this.isAcceptable(cursor)) {
-            // s,ip
+            // skip
             return c.CXVisit_Continue;
+        }
+
+        var decl = Decl.init(_cursor);
+        defer decl.deinit();
+        switch (decl) {
+            .function => |func| {
+                const name = try this.allocator.dupe(u8, func.name.toString());
+                std.log.debug("{s}", .{name});
+
+                const kv = try this.name_count.getOrPut(name);
+                const count = if (kv.found_existing) kv.value_ptr.* else 0;
+                defer kv.value_ptr.* = count + 1;
+
+                if (count == 0) {
+                    if (std.mem.startsWith(u8, name, "operator ")) {} else {
+                        // skip
+                        try this.writer.print("extern fn {s}(){s};\n", .{
+                            func.mangling.toString(),
+                            func.ret_type.toString(),
+                        });
+                        try this.writer.print("pub const {s} = {s};\n", .{
+                            func.name.toString(),
+                            func.mangling.toString(),
+                        });
+                    }
+                } else {
+                    std.log.warn("same name {s} => {}. overload function", .{ name, count });
+                }
+            },
+            .none => {},
         }
 
         switch (cursor.cursor.kind) {
@@ -97,19 +139,19 @@ const ClientData = struct {
                 // skip
             },
             else => {
-                std.log.debug("[{:03}] {s}:{}:{} => <{s}(0x{x})> <{s}(0x{x})> {s}", .{
-                    this.i,
-                    std.fs.path.basename(loc.path),
-                    loc.line,
-                    loc.col,
-                    // parent
-                    parent.kindName(),
-                    c.clang_hashCursor(parent.cursor),
-                    // cursor
-                    cursor.kindName(),
-                    c.clang_hashCursor(cursor.cursor),
-                    cursor.getDisplay(),
-                });
+                // std.log.debug("[{:03}] {s}:{}:{} => <{s}(0x{x})> <{s}(0x{x})> {s}", .{
+                //     this.i,
+                //     std.fs.path.basename(loc.path),
+                //     loc.line,
+                //     loc.col,
+                //     // parent
+                //     parent.kindName(),
+                //     c.clang_hashCursor(parent.cursor),
+                //     // cursor
+                //     cursor.kindName(),
+                //     c.clang_hashCursor(cursor.cursor),
+                //     cursor.getDisplay(),
+                // });
                 this.i += 1;
             },
         }
@@ -136,3 +178,68 @@ const ClientData = struct {
         return false;
     }
 };
+
+const CXType = struct {
+    cxtype: c.CXType,
+
+    fn init(cxtype: c.CXType) @This() {
+        return .{
+            .cxtype = cxtype,
+        };
+    }
+
+    fn deinit(this: @This()) void {
+        _ = this;
+    }
+
+    fn toString(this: @This()) []const u8 {
+        const _kind: CXTypeKind = @enumFromInt(this.cxtype.kind);
+        return @tagName(_kind);
+    }
+};
+
+const DeclFunction = struct {
+    name: CXString,
+    mangling: CXString,
+
+    ret_type: CXType,
+
+    fn init(cursor: c.CXCursor) @This() {
+        return .{
+            .name = .init(c.clang_getCursorSpelling(cursor)),
+            .mangling = .init(c.clang_Cursor_getMangling(cursor)),
+            .ret_type = .init(c.clang_getCursorResultType(cursor)),
+        };
+    }
+
+    fn deinit(this: *@This()) void {
+        this.ret_type.deinit();
+        this.mangling.deinit();
+        this.name.deinit();
+    }
+};
+
+const Decl = union(enum) {
+    none,
+    function: DeclFunction,
+
+    fn init(cursor: c.CXCursor) @This() {
+        return switch (cursor.kind) {
+            c.CXCursor_FunctionDecl => .{ .function = DeclFunction.init(cursor) },
+            else => .{ .none = void{} },
+        };
+    }
+
+    fn deinit(this: *@This()) void {
+        switch (this.*) {
+            .function => |*f| {
+                f.deinit();
+            },
+            .none => {},
+        }
+    }
+};
+
+test "cindex" {
+    try std.testing.expect(false);
+}
