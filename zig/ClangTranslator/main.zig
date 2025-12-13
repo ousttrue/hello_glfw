@@ -5,7 +5,6 @@ const c = @import("clang");
 const CIndexParser = @import("CIndexParsr.zig");
 const CXCursor = @import("CXCursor.zig");
 const CXString = @import("CXString.zig");
-const CXTypeKind = @import("cxtype_kind.zig").CXTypeKind;
 
 pub fn main() !void {
     if (std.os.argv.len < 2) {
@@ -109,16 +108,17 @@ const ClientData = struct {
         switch (decl) {
             .function => |func| {
                 const name = try this.allocator.dupe(u8, func.name.toString());
-                std.log.debug("{s}", .{name});
 
                 const kv = try this.name_count.getOrPut(name);
-                const count = if (kv.found_existing) kv.value_ptr.* else 0;
-                defer kv.value_ptr.* = count + 1;
+                if (kv.found_existing) {
+                    defer this.allocator.free(name);
+                    defer kv.value_ptr.* += 1;
+                } else {
+                    defer kv.value_ptr.* = 1;
 
-                if (count == 0) {
                     if (std.mem.startsWith(u8, name, "operator ")) {} else {
                         // skip
-                        try this.writer.print("extern fn {s}(){s};\n", .{
+                        try this.writer.print("extern fn {s}() {s};\n", .{
                             func.mangling.toString(),
                             func.ret_type.toString(),
                         });
@@ -127,8 +127,6 @@ const ClientData = struct {
                             func.mangling.toString(),
                         });
                     }
-                } else {
-                    std.log.warn("same name {s} => {}. overload function", .{ name, count });
                 }
             },
             .none => {},
@@ -193,10 +191,21 @@ const CXType = struct {
     }
 
     fn toString(this: @This()) []const u8 {
-        const _kind: CXTypeKind = @enumFromInt(this.cxtype.kind);
-        return @tagName(_kind);
+        return switch (this.cxtype.kind) {
+            c.CXType_Void => "void",
+            c.CXType_Bool => "bool",
+            c.CXType_Float => "f32",
+            c.CXType_Double => "f64",
+            c.CXType_Int => "c_int",
+            c.CXType_Pointer => "*opaque {}",
+            c.CXType_LValueReference => "*opaque {}",
+            c.CXType_Elaborated => "opaque {}",
+            else => std.fmt.bufPrint(&tmp, "CXType_({})", .{this.cxtype.kind}) catch @panic("OOM"),
+        };
     }
 };
+
+var tmp: [256]u8 = undefined;
 
 const DeclFunction = struct {
     name: CXString,
