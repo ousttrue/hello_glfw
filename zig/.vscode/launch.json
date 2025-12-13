@@ -10,7 +10,9 @@
             "name": "Launch",
             "program": "${workspaceFolder}/zig-out/bin/cltgen",
             "args": [
-                "../../limgui/_external/imgui/imgui/imgui.h"
+                "src/imgui_cltgen.h",
+                "-I",
+                "../../limgui/_external/imgui/imgui",
             ],
             "cwd": "${workspaceFolder}"
         },

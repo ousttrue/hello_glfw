@@ -50,6 +50,9 @@ pub fn build(b: *std.Build) !void {
 
     const cltgen_run = b.addRunArtifact(cltgen);
     cltgen_run.addFileArg(imgui_dep.path("imgui.h"));
+    cltgen_run.addFileArg(imgui_dep.path("backends/imgui_impl_glfw.h"));
+    cltgen_run.addFileArg(imgui_dep.path("backends/imgui_impl_opengl3.h"));
+
     const imgui_mod_src = cltgen_run.captureStdOut();
     const imgui_src_install = b.addInstallFile(imgui_mod_src, "src/imgui.zig");
     b.getInstallStep().dependOn(&imgui_src_install.step);
@@ -60,8 +63,12 @@ pub fn build(b: *std.Build) !void {
         .root_source_file = imgui_mod_src,
     });
 
-    for (samples) |sample| {
-        try build_sample(b, target, optimize, sample, sokol_dep, imgui_dep, imgui_mod);
+    // const samples_step = b.step("samples", "samples");
+    if (b.option(bool, "samples", "samples") orelse false) {
+        for (samples) |sample| {
+            _ = try build_sample(b, target, optimize, sample, sokol_dep, imgui_dep, imgui_mod);
+            // samples_step.dependOn(&sample_compiled.step);
+        }
     }
 }
 
@@ -98,6 +105,7 @@ pub fn build_ClangTranslator(
     const exe = b.addExecutable(.{
         .name = name,
         .root_module = mod,
+        .use_llvm = true,
     });
     return exe;
 }
@@ -110,7 +118,7 @@ fn build_sample(
     sokol_dep: *std.Build.Dependency,
     imgui_dep: *std.Build.Dependency,
     imgui_mod: *std.Build.Module,
-) !void {
+) !*std.Build.Step.Compile {
     const mod = b.addModule(sample.name, .{
         .target = target,
         .optimize = optimize,
@@ -122,6 +130,7 @@ fn build_sample(
     const exe = b.addExecutable(.{
         .name = sample.name,
         .root_module = mod,
+        .use_llvm = true,
     });
     b.installArtifact(exe);
 
@@ -179,4 +188,6 @@ fn build_sample(
             },
         });
     }
+
+    return exe;
 }

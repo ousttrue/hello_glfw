@@ -12,6 +12,7 @@ const std = @import("std");
 const glfw = @import("glfw");
 const gl = @import("glad");
 const linmath = @import("linmath.zig");
+const imgui = @import("imgui");
 
 // #include "imgui.h"
 // #include "imgui_impl_glfw.h"
@@ -42,10 +43,12 @@ export fn glfw_error_callback(err: c_int, description: [*c]const u8) void {
 // Main code
 pub fn main() void {
     _ = glfw.glfwSetErrorCallback(glfw_error_callback);
-    //     if (!glfwInit())
-    //         return 1;
-    //
-    //     // Decide GL+GLSL versions
+    if (glfw.glfwInit() == 0) {
+        @panic("glfwInit");
+    }
+    defer glfw.glfwTerminate();
+
+    // Decide GL+GLSL versions
     // #if defined(IMGUI_IMPL_OPENGL_ES2)
     //     // GL ES 2.0 + GLSL 100 (WebGL 1.0)
     //     const char* glsl_version = "#version 100";
@@ -66,16 +69,17 @@ pub fn main() void {
     //     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
     //     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // Required on Mac
     // #else
-    //     // GL 3.0 + GLSL 130
+    // GL 3.0 + GLSL 130
     //     const char* glsl_version = "#version 130";
-    //     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    //     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-    //     //glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
-    //     //glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // 3.0+ only
+    glfw.glfwWindowHint(glfw.GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfw.glfwWindowHint(glfw.GLFW_CONTEXT_VERSION_MINOR, 0);
+    //glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
+    //glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // 3.0+ only
     // #endif
-    //
-    //     // Create window with graphics context
-    //     float main_scale = ImGui_ImplGlfw_GetContentScaleForMonitor(glfwGetPrimaryMonitor()); // Valid on GLFW 3.3+ only
+
+    // Create window with graphics context
+    // const main_scale = imgui.ImGui_ImplGlfw_GetContentScaleForMonitor(glfw.glfwGetPrimaryMonitor()); // Valid on GLFW 3.3+ only
+    // _ = main_scale;
     //     GLFWwindow* window = glfwCreateWindow((int)(1280 * main_scale), (int)(800 * main_scale), "Dear ImGui GLFW+OpenGL3 example", nullptr, nullptr);
     //     if (window == nullptr)
     //         return 1;
@@ -84,7 +88,8 @@ pub fn main() void {
     //
     //     // Setup Dear ImGui context
     //     IMGUI_CHECKVERSION();
-    //     ImGui::CreateContext();
+
+        // ImGui::CreateContext();
     //     ImGuiIO& io = ImGui::GetIO(); (void)io;
     //     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     //     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
@@ -212,7 +217,4 @@ pub fn main() void {
     //     ImGui::DestroyContext();
     //
     //     glfwDestroyWindow(window);
-    //     glfwTerminate();
-    //
-    //     return 0;
 }

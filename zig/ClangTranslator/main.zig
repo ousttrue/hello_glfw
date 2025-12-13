@@ -2,22 +2,8 @@
 
 const std = @import("std");
 const c = @import("clang");
-const cxcursor_kind = @import("cxcursor_kind.zig");
-
-const DEFAULT_ARGS = [_][]const u8{
-    "-x",
-    "c++",
-    "-std=c++17",
-};
-
-const MSVC_ARGS = [_][]const u8{
-    "-target",
-    "x86_64-windows-msvc",
-    "-fdeclspec",
-    "-fms-compatibility-version=18",
-    "-fms-compatibility",
-    "-DNOMINMAX",
-};
+const CIndexParser = @import("CIndexParsr.zig");
+const CXCursor = @import("CXCursor.zig");
 
 pub fn main() !void {
     if (std.os.argv.len < 2) {
@@ -31,70 +17,56 @@ pub fn main() !void {
     var writer_buf: [1024]u8 = undefined;
     var writer = std.fs.File.stdout().writer(&writer_buf);
 
-    var command_line = std.ArrayList(*const u8){};
-    defer command_line.deinit(allocator);
+    var cindex_parser = if (std.os.argv.len == 2)
+        try CIndexParser.fromSingleHeader(allocator, std.os.argv[1])
+    else
+        try CIndexParser.fromMultiHeadr(allocator, std.os.argv[1..]);
+    defer cindex_parser.deinit();
 
-    for (DEFAULT_ARGS) |arg| {
-        try command_line.append(allocator, &arg[0]);
-    }
-
-    const index = c.clang_createIndex(0, 0);
-    const flags =
-        c.CXTranslationUnit_DetailedPreprocessingRecord | c.CXTranslationUnit_SkipFunctionBodies;
-
-    var entry_point_buf: [1024]u8 = undefined;
-    const entry_point = try std.fs.cwd().realpathZ(std.os.argv[1], &entry_point_buf);
-    entry_point_buf[entry_point.len] = 0;
-
-    std.log.debug("entry_point => {s}", .{entry_point});
-
-    var tu: c.CXTranslationUnit = undefined;
-    const result = c.clang_parseTranslationUnit2(index,
-        // entry point,
-        &entry_point[0],
-        //command_line,
-        &command_line.items[0], @intCast(command_line.items.len),
-        // unsaved_files,
-        null, 0,
-        //
-        flags, &tu);
-    switch (result) {
-        c.CXError_Success => {}, // SUCCESS
-        c.CXError_Failure => @panic("failer"),
-        c.CXError_Crashed => @panic("crash"),
-        c.CXError_InvalidArguments => @panic("invalid arguments"),
-        c.CXError_ASTReadError => @panic("AST read error"),
-        else => @panic("unknown"),
-    }
+    const tu = try cindex_parser.parse();
     defer c.clang_disposeTranslationUnit(tu);
 
-    var data = Data.init(&writer.interface, entry_point);
+    var data = ClientData.init(
+        allocator,
+        &writer.interface,
+        cindex_parser.entry_point,
+        cindex_parser.include_dirs.items,
+    );
     defer data.deinit();
 
     _ = c.clang_visitChildren(
         c.clang_getTranslationUnitCursor(tu),
-        Visitor,
+        ClientData.Visitor,
         &data,
     );
 }
 
-export fn Visitor(
-    cursor: c.CXCursor,
-    parent: c.CXCursor,
-    client_data: c.CXClientData,
-) c.CXChildVisitResult {
-    const data: *Data = @ptrCast(@alignCast(client_data));
-    return data.onVisit(cursor, parent);
-}
-
-const Data = struct {
+const ClientData = struct {
+    allocator: std.mem.Allocator,
     writer: *std.Io.Writer,
+    include_dirs: []const []const u8,
     entry_point: []const u8,
     i: u32 = 0,
 
-    fn init(writer: *std.Io.Writer, entry_point: []const u8) @This() {
+    export fn Visitor(
+        cursor: c.CXCursor,
+        parent: c.CXCursor,
+        client_data: c.CXClientData,
+    ) c.CXChildVisitResult {
+        const data: *@This() = @ptrCast(@alignCast(client_data));
+        return data.onVisit(cursor, parent);
+    }
+
+    fn init(
+        allocator: std.mem.Allocator,
+        writer: *std.Io.Writer,
+        entry_point: []const u8,
+        include_dirs: []const []const u8,
+    ) @This() {
         return .{
+            .allocator = allocator,
             .writer = writer,
+            .include_dirs = include_dirs,
             .entry_point = entry_point,
         };
     }
@@ -115,8 +87,8 @@ const Data = struct {
         defer parent.deinit();
 
         const loc = cursor.getLocation();
-        if (!std.mem.eql(u8, loc.path, this.entry_point)) {
-            // skip
+        if (!this.isAcceptable(cursor)) {
+            // s,ip
             return c.CXVisit_Continue;
         }
 
@@ -147,76 +119,20 @@ const Data = struct {
             else => c.CXChildVisit_Continue,
         };
     }
-};
 
-const CXCursor = struct {
-    cursor: c.CXCursor,
-    display: c.CXString,
-    filename: c.CXString,
-
-    fn init(cursor: c.CXCursor) @This() {
-        var this = @This(){
-            .cursor = cursor,
-            .display = c.clang_getCursorDisplayName(cursor),
-            .filename = undefined,
-        };
-
-        const loc = c.clang_getCursorLocation(cursor);
-        var file: c.CXFile = undefined;
-        c.clang_getFileLocation(loc, &file, null, null, null);
-        this.filename = c.clang_File_tryGetRealPathName(file);
-        return this;
-    }
-
-    fn deinit(this: *@This()) void {
-        defer c.clang_disposeString(this.display);
-        defer c.clang_disposeString(this.filename);
-    }
-
-    fn getDisplay(this: @This()) []const u8 {
-        if (c.clang_getCString(this.display)) |p| {
-            return std.mem.span(p);
-        } else {
-            return "";
-        }
-    }
-
-    fn kindName(this: @This()) []const u8 {
-        if (cxcursor_kind.toName(this.cursor.kind)) |str| {
-            const prefix = "CXCursor_";
-            if (std.mem.startsWith(u8, str, prefix)) {
-                return str[prefix.len..];
-            } else {
-                return str;
+    fn isAcceptable(this: @This(), cursor: CXCursor) bool {
+        if (c.clang_getCString(cursor.filename)) |p| {
+            const cursor_path = std.mem.span(p);
+            // if (std.mem.eql(u8, cursor_path, this.entry_point)) {
+            //     return true;
+            // }
+            for (this.include_dirs) |include| {
+                if (std.mem.startsWith(u8, cursor_path, include)) {
+                    return true;
+                }
             }
-        } else {
-            std.log.err("__UNKNOWN__ cursor kind: {}", .{this.cursor.kind});
-            return "__UNKNOWN__";
         }
-    }
 
-    fn getLocation(this: @This()) struct {
-        path: []const u8,
-        line: u32,
-        col: u32,
-    } {
-        const loc = c.clang_getCursorLocation(this.cursor);
-        var line: u32 = undefined;
-        var col: u32 = undefined;
-        c.clang_getFileLocation(loc, null, &line, &col, null);
-
-        if (c.clang_getCString(this.filename)) |p| {
-            return .{
-                .path = std.mem.span(p),
-                .line = line,
-                .col = col,
-            };
-        } else {
-            return .{
-                .path = "",
-                .line = 0,
-                .col = 0,
-            };
-        }
+        return false;
     }
 };
