@@ -6,12 +6,32 @@ pub const ValueType = union(enum) {
     u8,
 };
 
+pub const PointerType = struct {
+    type_ref: Type,
+
+    pub fn create(
+        allocator: std.mem.Allocator,
+        type_ref: Type,
+    ) !*@This() {
+        const this = try allocator.create(@This());
+        this.* = .{
+            .type_ref = type_ref,
+        };
+        return this;
+    }
+
+    pub fn destroy(this: *const @This(), allocator: std.mem.Allocator) void {
+        this.type_ref.destroy(allocator);
+        allocator.destroy(this);
+    }
+};
+
 pub const Field = struct {
     name: []const u8,
     type_ref: Type,
 };
 
-pub const Container = struct {
+pub const ContainerType = struct {
     name: []const u8,
     fields: []const Field,
 
@@ -36,61 +56,32 @@ pub const Container = struct {
     }
 };
 
-pub const PoinerType = struct {};
-
 pub const FunctionType = struct {};
 
 pub const EnumType = struct {};
 
 pub const Type = union(enum) {
     value: ValueType,
-    pointer: *PoinerType,
-    container: *Container,
+    pointer: *PointerType,
+    container: *ContainerType,
     function: *FunctionType,
     int_enum: *EnumType,
 
     pub fn destroy(this: *const @This(), allocator: std.mem.Allocator) void {
         switch (this.*) {
+            .value => {},
+            .pointer => |pointer| {
+                pointer.destroy(allocator);
+            },
             .container => |container| {
                 container.destroy(allocator);
             },
-            else => {},
+            .function => {
+                @panic("not impl");
+            },
+            .int_enum => {
+                @panic("not impl");
+            },
         }
     }
 };
-
-// pub const DeclarationType = enum {
-//     function,
-//     pointer,
-// };
-//
-// pub const FunctionType = struct {
-//     allocator: std.mem.Allocator,
-//     name: []const u8,
-//     return_type: Declaration,
-// };
-//
-// pub const PointerType = struct {
-//     allocator: std.mem.Allocator,
-// };
-//
-// pub const Declaration = union(DeclarationType) {
-//     function: *FunctionType,
-//     pointer: *PointerType,
-//
-//     pub fn createFromCXType(allocator: std.mem.Allocator, cxtype: c.CXType) !*@This() {
-//         const this = try allocator.create(@This());
-//         switch (cxtype.kind) {
-//             c.CXType_Pointer => {},
-//             else => {
-//                 std.log.err("{s}", .{cxtype_kind.toName(cxtype.kind)});
-//                 @panic("not impl");
-//             },
-//         }
-//         return this;
-//     }
-//
-//     pub fn destroy(this: *@This()) void {
-//         this.allocator.destroy(this);
-//     }
-// };

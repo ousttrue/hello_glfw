@@ -13,6 +13,10 @@ pub fn write(writer: *std.Io.Writer, t: cx_declaration.Type) !void {
         .value => |v| {
             try writeValue(writer, v);
         },
+        .pointer => |p| {
+            try writer.writeAll("[*c]");
+            try write(writer, p.type_ref);
+        },
         .container => |container| {
             try writer.print("pub const {s} = struct {{\n", .{container.name});
             for (container.fields) |field| {
@@ -36,7 +40,7 @@ pub fn writeValue(writer: *std.Io.Writer, v: cx_declaration.ValueType) !void {
     }
 }
 
-test "allocPrint" {
+test "value" {
     const allocator = std.testing.allocator;
 
     {
@@ -46,10 +50,30 @@ test "allocPrint" {
         defer allocator.free(zig_src);
         try std.testing.expectEqualSlices(u8, "u8", zig_src);
     }
+}
+
+test "pointer" {
+    const allocator = std.testing.allocator;
+
+    {
+        const type_ref = cx_declaration.Type{
+            .pointer = try cx_declaration.PointerType.create(allocator, .{
+                .value = .{ .u8 = void{} },
+            }),
+        };
+        defer type_ref.destroy(allocator);
+        const zig_src = try allocPrint(allocator, type_ref);
+        defer allocator.free(zig_src);
+        try std.testing.expectEqualSlices(u8, "[*c]u8", zig_src);
+    }
+}
+
+test "container" {
+    const allocator = std.testing.allocator;
 
     {
         var type_ref = cx_declaration.Type{
-            .container = try cx_declaration.Container.create(allocator, "Obj", &.{
+            .container = try cx_declaration.ContainerType.create(allocator, "Obj", &.{
                 .{
                     .name = "value",
                     .type_ref = .{ .value = .{ .u8 = void{} } },
