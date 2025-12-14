@@ -8,7 +8,7 @@ pub const ValueType = union(enum) {
 
 pub const Field = struct {
     name: []const u8,
-    type_ref: TypeReference,
+    type_ref: Type,
 };
 
 pub const Container = struct {
@@ -29,7 +29,7 @@ pub const Container = struct {
     }
 
     pub fn destroy(this: *const @This(), allocator: std.mem.Allocator) void {
-        for(this.fields)|*field|{
+        for (this.fields) |*field| {
             field.type_ref.destroy(allocator);
         }
         allocator.destroy(this);
@@ -48,13 +48,9 @@ pub const Type = union(enum) {
     container: *Container,
     function: *FunctionType,
     int_enum: *EnumType,
-};
-
-pub const TypeReference = struct {
-    ref: Type,
 
     pub fn destroy(this: *const @This(), allocator: std.mem.Allocator) void {
-        switch (this.ref) {
+        switch (this.*) {
             .container => |container| {
                 container.destroy(allocator);
             },
