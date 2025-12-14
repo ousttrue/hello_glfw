@@ -2,30 +2,38 @@ const std = @import("std");
 const cx_declaration = @import("cx_declaration.zig");
 
 pub fn allocPrint(allocator: std.mem.Allocator, t: cx_declaration.Type) ![]const u8 {
-    return switch (t) {
-        .value => |v| allocPrintValue(allocator, v),
-        .container => |container| {
-            var out = std.Io.Writer.Allocating.init(allocator);
-            defer out.deinit();
-
-            try out.writer.print("pub const {s} = struct {{\n", .{container.name});
-            for (container.fields) |field| {
-                const type_str = try allocPrint(allocator, field.type_ref);
-                defer allocator.free(type_str);
-                try out.writer.print("    {s}: {s},\n", .{ field.name, type_str });
-            }
-            try out.writer.writeAll("};");
-
-            return out.toOwnedSlice();
-        },
-        else => "not_impl",
-    };
+    var out = std.Io.Writer.Allocating.init(allocator);
+    defer out.deinit();
+    try write(&out.writer, t);
+    return out.toOwnedSlice();
 }
 
-pub fn allocPrintValue(allocator: std.mem.Allocator, v: cx_declaration.ValueType) ![]const u8 {
-    return switch (v) {
-        .u8 => try allocator.dupe(u8, "u8"),
-    };
+pub fn write(writer: *std.Io.Writer, t: cx_declaration.Type) !void {
+    switch (t) {
+        .value => |v| {
+            try writeValue(writer, v);
+        },
+        .container => |container| {
+            try writer.print("pub const {s} = struct {{\n", .{container.name});
+            for (container.fields) |field| {
+                try writer.print("    {s}: ", .{field.name});
+                try write(writer, field.type_ref);
+                try writer.writeAll(",\n");
+            }
+            try writer.writeAll("};");
+        },
+        else => {
+            return error.not_impl;
+        },
+    }
+}
+
+pub fn writeValue(writer: *std.Io.Writer, v: cx_declaration.ValueType) !void {
+    switch (v) {
+        .u8 => {
+            try writer.writeAll("u8");
+        },
+    }
 }
 
 test "allocPrint" {
