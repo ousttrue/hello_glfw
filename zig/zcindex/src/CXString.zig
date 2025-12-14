@@ -1,5 +1,5 @@
 const std = @import("std");
-const c = @import("clang");
+const c = @import("cindex");
 
 str: c.CXString,
 

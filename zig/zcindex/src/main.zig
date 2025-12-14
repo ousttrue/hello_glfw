@@ -1,7 +1,7 @@
 // https://rocm.docs.amd.com/projects/llvm-project/en/latest/LLVM/clang/html/LibClang.html
 
 const std = @import("std");
-const c = @import("clang");
+const c = @import("cindex");
 const CIndexParser = @import("CIndexParsr.zig");
 const CXCursor = @import("CXCursor.zig");
 const CXString = @import("CXString.zig");

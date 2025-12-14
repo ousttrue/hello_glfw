@@ -14,6 +14,7 @@
             .url = "https://github.com/ocornut/imgui/archive/refs/tags/v1.92.5-docking.zip",
             .hash = "N-V-__8AAEbOfQBnvcFcCX2W5z7tDaN8vaNZGamEQtNOe0UI",
         },
+        .zcindex = .{ .path = "./zcindex" },
     },
     .minimum_zig_version = "0.15.2",
     .paths = .{""},

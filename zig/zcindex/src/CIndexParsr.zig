@@ -1,5 +1,5 @@
 const std = @import("std");
-const c = @import("clang");
+const c = @import("cindex");
 
 const DEFAULT_ARGS = [_][*:0]const u8{
     "-x",

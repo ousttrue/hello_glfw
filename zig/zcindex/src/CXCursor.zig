@@ -1,5 +1,5 @@
 const std = @import("std");
-const c = @import("clang");
+const c = @import("cindex");
 const cxcursor_kind = @import("cxcursor_kind.zig");
 
 cursor: c.CXCursor,
