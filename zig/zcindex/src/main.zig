@@ -2,9 +2,12 @@
 
 const std = @import("std");
 const c = @import("cindex");
+
 const CIndexParser = @import("CIndexParsr.zig");
 const ClientData = @import("ClientData.zig");
 const CXCursor = @import("CXCursor.zig");
+const zig_generator = @import("zig_generator.zig");
+const cx_declaration = @import("cx_declaration.zig");
 
 pub fn main() !void {
     if (std.os.argv.len < 2) {
@@ -30,7 +33,6 @@ pub fn main() !void {
 
     var data = ClientData.init(
         allocator,
-        &writer.interface,
         cindex_parser.entry_point,
         cindex_parser.include_dirs.items,
     );
@@ -72,6 +74,13 @@ const T = struct {
     }
 };
 
+test {
+    _ = cx_declaration;
+    _ = zig_generator;
+    std.testing.refAllDecls(@This());
+    // std.testing.refAllDeclsRecursive(@import("root"));
+}
+
 test "cindex" {
     const allocator = std.testing.allocator;
     const contents =
@@ -89,12 +98,8 @@ test "cindex" {
     const tu = _tu orelse @panic("parse");
     defer c.clang_disposeTranslationUnit(tu);
 
-    var out = std.Io.Writer.Allocating.init(allocator);
-    defer out.deinit();
-
     var data = ClientData.init(
         allocator,
-        &out.writer,
         cindex_parser.entry_point,
         cindex_parser.include_dirs.items,
     );
@@ -107,8 +112,31 @@ test "cindex" {
         &data,
     );
 
-    const cursor = data.getCursorByName("GetIO").?;
-    _ = cursor;
+    {
+        const cursor = data.getCursorByName("__unknown__");
+        try std.testing.expect(cursor == null);
+    }
+    // {
+    //     const cursor = data.getCursorByName("GetIO").?;
+    //     const decl = cx_declaration.createDeclaration(allocator).?;
+    //     defer decl.destroy();
+    //     try std.testing.expect(@as(cx_declaration.DeclarationType, decl) ==
+    //         cx_declaration.DeclarationType.function_decl);
+    //
+    //     const f = decl.function_decl;
+    //     const ret_decl = f.getReturnDecl();
+    //     try std.testing.expect(@as(cx_declaration.DeclarationType, ret_decl) ==
+    //         cx_declaration.DeclarationType.pointer);
+    //
+    //     const zig_src = try zig_generator.allocPrint(allocator, decl);
+    //     defer allocator.free(zig_src);
+    //     try std.testing.expectEqualSlices(u8, "extern fn GetIO() *ImGuiIO;", zig_src);
+    // }
+    // {
+    //     const cursor = data.getCursorByName("ImGuiIO").?;
+    //     const decl = cursor.getDeclaration();
+    //     try std.testing.expect(decl == null);
+    // }
 
     // const _zig_source = try out.toOwnedSlice();
     // defer allocator.free(_zig_source);

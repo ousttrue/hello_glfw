@@ -1,6 +1,7 @@
 const std = @import("std");
 const c = @import("cindex");
 const cxcursor_kind = @import("cxcursor_kind.zig");
+const cx_declaration = @import("cx_declaration.zig");
 
 cursor: c.CXCursor,
 spelling: c.CXString,
@@ -64,30 +65,5 @@ pub fn getKindName(this: @This()) []const u8 {
     } else {
         std.log.err("__UNKNOWN__ cursor kind: {}", .{this.cursor.kind});
         return "__UNKNOWN__";
-    }
-}
-
-pub fn getLocation(this: @This()) struct {
-    path: []const u8,
-    line: u32,
-    col: u32,
-} {
-    const loc = c.clang_getCursorLocation(this.cursor);
-    var line: u32 = undefined;
-    var col: u32 = undefined;
-    c.clang_getFileLocation(loc, null, &line, &col, null);
-
-    if (c.clang_getCString(this.filename)) |p| {
-        return .{
-            .path = std.mem.span(p),
-            .line = line,
-            .col = col,
-        };
-    } else {
-        return .{
-            .path = "",
-            .line = 0,
-            .col = 0,
-        };
     }
 }

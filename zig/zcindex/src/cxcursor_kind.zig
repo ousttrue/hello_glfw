@@ -1,7 +1,7 @@
 const c = @import("cindex");
 
-pub fn toName(cursor_kind: u32) ?[]const u8 {
-    return switch (cursor_kind) {
+pub fn toName(kind: u32) ?[]const u8 {
+    return switch (kind) {
         c.CXCursor_UnexposedDecl => "CXCursor_UnexposedDecl",
         c.CXCursor_StructDecl => "CXCursor_StructDecl",
         c.CXCursor_UnionDecl => "CXCursor_UnionDecl",

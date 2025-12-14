@@ -4,11 +4,8 @@ const CXCursor = @import("CXCursor.zig");
 const CXString = @import("CXString.zig");
 
 allocator: std.mem.Allocator,
-writer: *std.Io.Writer,
 include_dirs: []const []const u8,
 entry_point: []const u8,
-i: u32 = 0,
-name_count: std.StringHashMap(u32),
 cursors: std.ArrayList(CXCursor) = .{},
 
 pub export fn visitor(
@@ -24,16 +21,13 @@ pub export fn visitor(
 
 pub fn init(
     allocator: std.mem.Allocator,
-    writer: *std.Io.Writer,
     entry_point: []const u8,
     include_dirs: []const []const u8,
 ) @This() {
     return .{
         .allocator = allocator,
-        .writer = writer,
         .include_dirs = include_dirs,
         .entry_point = entry_point,
-        .name_count = .init(allocator),
     };
 }
 
@@ -42,12 +36,6 @@ pub fn deinit(this: *@This()) void {
         item.deinit();
     }
     this.cursors.deinit(this.allocator);
-
-    var it = this.name_count.keyIterator();
-    while (it.next()) |key| {
-        this.allocator.free(key.*);
-    }
-    this.name_count.deinit();
 }
 
 pub fn getCursorByName(this: @This(), name: []const u8) ?CXCursor {
@@ -69,7 +57,6 @@ fn onVisit(
     var parent = CXCursor.init(_parent);
     defer parent.deinit();
 
-    const loc = cursor.getLocation();
     if (!this.isAcceptable(cursor)) {
         // skip
         return c.CXVisit_Continue;
@@ -77,57 +64,6 @@ fn onVisit(
     try this.cursors.append(this.allocator, cursor);
 
     cursor.debugPrint();
-
-    var decl = Decl.init(_cursor);
-    defer decl.deinit();
-    switch (decl) {
-        .function => |func| {
-            const name = try this.allocator.dupe(u8, func.name.toString());
-
-            const kv = try this.name_count.getOrPut(name);
-            if (kv.found_existing) {
-                defer this.allocator.free(name);
-                defer kv.value_ptr.* += 1;
-            } else {
-                defer kv.value_ptr.* = 1;
-
-                if (std.mem.startsWith(u8, name, "operator ")) {} else {
-                    // skip
-                    try this.writer.print("extern fn {s}() {s};\n", .{
-                        func.mangling.toString(),
-                        func.ret_type.toString(),
-                    });
-                    try this.writer.print("pub const {s} = {s};\n", .{
-                        func.name.toString(),
-                        func.mangling.toString(),
-                    });
-                }
-            }
-        },
-        .none => {},
-    }
-
-    switch (cursor.cursor.kind) {
-        c.CXCursor_MacroExpansion => {
-            // skip
-        },
-        else => {
-            std.log.debug("[{:03}] {s}:{}:{} => <{s}(0x{x})> <{s}(0x{x})> {s}", .{
-                this.i,
-                std.fs.path.basename(loc.path),
-                loc.line,
-                loc.col,
-                // parent
-                parent.getKindName(),
-                c.clang_hashCursor(parent.cursor),
-                // cursor
-                cursor.getKindName(),
-                c.clang_hashCursor(cursor.cursor),
-                cursor.getDisplay(),
-            });
-            this.i += 1;
-        },
-    }
 
     return switch (cursor.cursor.kind) {
         c.CXCursor_Namespace => c.CXChildVisit_Recurse,
@@ -207,23 +143,23 @@ const DeclFunction = struct {
     }
 };
 
-const Decl = union(enum) {
-    none,
-    function: DeclFunction,
-
-    fn init(cursor: c.CXCursor) @This() {
-        return switch (cursor.kind) {
-            c.CXCursor_FunctionDecl => .{ .function = DeclFunction.init(cursor) },
-            else => .{ .none = void{} },
-        };
-    }
-
-    fn deinit(this: *@This()) void {
-        switch (this.*) {
-            .function => |*f| {
-                f.deinit();
-            },
-            .none => {},
-        }
-    }
-};
+// const Decl = union(enum) {
+//     none,
+//     function: DeclFunction,
+//
+//     fn init(cursor: c.CXCursor) @This() {
+//         return switch (cursor.kind) {
+//             c.CXCursor_FunctionDecl => .{ .function = DeclFunction.init(cursor) },
+//             else => .{ .none = void{} },
+//         };
+//     }
+//
+//     fn deinit(this: *@This()) void {
+//         switch (this.*) {
+//             .function => |*f| {
+//                 f.deinit();
+//             },
+//             .none => {},
+//         }
+//     }
+// };
