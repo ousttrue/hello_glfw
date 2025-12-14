@@ -1,4 +1,4 @@
-const c = @import("clang");
+const c = @import("cindex");
 
 pub fn toName(cursor_kind: u32) ?[]const u8 {
     return switch (cursor_kind) {

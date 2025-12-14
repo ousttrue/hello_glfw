@@ -57,6 +57,7 @@ pub fn fromSingleHeader(
     return this;
 }
 
+/// Create a CXUnsavedFile that combines multiple #include headers
 pub fn fromMultiHeadr(
     allocator: std.mem.Allocator,
     headers: []const [*:0]const u8,
@@ -84,6 +85,31 @@ pub fn fromMultiHeadr(
     return this;
 }
 
+/// Create a CXUnsavedFile with the contents.
+///
+/// test usage.
+pub fn fromContents(
+    allocator: std.mem.Allocator,
+    _contents: []const u8,
+) !@This() {
+    std.log.warn("contents => '{s}'", .{_contents});
+
+    var this = try @This().init(allocator);
+
+    // for allocator.free in deinit
+    const contents: []const u8 = try allocator.dupe(u8, _contents);
+
+    // make unsaved file
+    this.entry_point = "__UNSAVED_FILE__.h";
+    this.unsaved_file = .{
+        .Contents = &contents[0],
+        .Length = contents.len,
+        .Filename = this.entry_point,
+    };
+
+    return this;
+}
+
 pub fn deinit(this: *@This()) void {
     if (this.unsaved_file) |unsaved_file| {
         this.allocator.free(unsaved_file.Contents[0..unsaved_file.Length]);
@@ -97,6 +123,11 @@ pub fn deinit(this: *@This()) void {
 
 pub fn parse(this: *@This()) !c.CXTranslationUnit {
     const index = c.clang_createIndex(0, 0);
+
+    std.log.warn("entry_point => {s}", .{this.entry_point});
+    for (this.command_line.items, 0..) |command, i| {
+        std.log.warn("[{:2}] {s}", .{ i, command });
+    }
 
     var tu: c.CXTranslationUnit = undefined;
     const result = c.clang_parseTranslationUnit2(index,
