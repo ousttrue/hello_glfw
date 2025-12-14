@@ -9,6 +9,7 @@ include_dirs: []const []const u8,
 entry_point: []const u8,
 i: u32 = 0,
 name_count: std.StringHashMap(u32),
+cursors: std.ArrayList(CXCursor) = .{},
 
 pub export fn visitor(
     cursor: c.CXCursor,
@@ -37,11 +38,25 @@ pub fn init(
 }
 
 pub fn deinit(this: *@This()) void {
+    for (this.cursors.items) |*item| {
+        item.deinit();
+    }
+    this.cursors.deinit(this.allocator);
+
     var it = this.name_count.keyIterator();
     while (it.next()) |key| {
         this.allocator.free(key.*);
     }
     this.name_count.deinit();
+}
+
+pub fn getCursorByName(this: @This(), name: []const u8) ?CXCursor {
+    for (this.cursors.items) |item| {
+        if (std.mem.eql(u8, item.getSpelling(), name)) {
+            return item;
+        }
+    }
+    return null;
 }
 
 fn onVisit(
@@ -50,7 +65,6 @@ fn onVisit(
     _parent: c.CXCursor,
 ) !c.CXChildVisitResult {
     var cursor = CXCursor.init(_cursor);
-    defer cursor.deinit();
 
     var parent = CXCursor.init(_parent);
     defer parent.deinit();
@@ -60,6 +74,7 @@ fn onVisit(
         // skip
         return c.CXVisit_Continue;
     }
+    try this.cursors.append(this.allocator, cursor);
 
     cursor.debugPrint();
 
@@ -121,7 +136,7 @@ fn onVisit(
 }
 
 fn isAcceptable(this: @This(), cursor: CXCursor) bool {
-    if(cursor.isFromMainFile()){
+    if (cursor.isFromMainFile()) {
         return true;
     }
 

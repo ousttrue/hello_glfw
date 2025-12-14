@@ -107,6 +107,9 @@ test "cindex" {
         &data,
     );
 
+    const cursor = data.getCursorByName("GetIO").?;
+    _ = cursor;
+
     // const _zig_source = try out.toOwnedSlice();
     // defer allocator.free(_zig_source);
     // std.log.warn("{s}", .{_zig_source});
