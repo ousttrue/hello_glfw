@@ -43,6 +43,35 @@ pub fn main() !void {
     );
 }
 
+const T = struct {
+    export fn debug_visitor(
+        _cursor: c.CXCursor,
+        _parent: c.CXCursor,
+        client_data: c.CXClientData,
+    ) c.CXChildVisitResult {
+        _ = client_data;
+
+        var cursor = CXCursor.init(_cursor);
+        defer cursor.deinit();
+
+        var parent = CXCursor.init(_parent);
+        defer parent.deinit();
+
+        const loc = cursor.getLocation();
+        std.log.warn("{s}:{}:{} => {s}", .{ loc.path, loc.line, loc.col, cursor.getDisplay() });
+
+        // if (c.clang_getCString(cursor.filename)) |p| {
+        //     const cursor_path = std.mem.span(p);
+        //     std.log.warn("=> {s}: {s}", .{ cursor_path, cursor.getDisplay() });
+        // } else {
+        //     std.log.warn("no file: {s}", .{cursor.getDisplay()});
+        // }
+
+        // std.log.warn("{s}", .{cursor.getDisplay()});
+        return c.CXVisit_Continue;
+    }
+};
+
 test "cindex" {
     const allocator = std.testing.allocator;
     const contents =
@@ -71,39 +100,10 @@ test "cindex" {
     );
     defer data.deinit();
 
-    const T = struct {
-        export fn debug_visitor(
-            _cursor: c.CXCursor,
-            _parent: c.CXCursor,
-            client_data: c.CXClientData,
-        ) c.CXChildVisitResult {
-            _ = client_data;
-
-            var cursor = CXCursor.init(_cursor);
-            defer cursor.deinit();
-
-            var parent = CXCursor.init(_parent);
-            defer parent.deinit();
-
-            const loc = cursor.getLocation();
-            std.log.warn("{s}:{}:{} => {s}", .{loc.path, loc.line, loc.col, cursor.getDisplay()});
-
-            // if (c.clang_getCString(cursor.filename)) |p| {
-            //     const cursor_path = std.mem.span(p);
-            //     std.log.warn("=> {s}: {s}", .{ cursor_path, cursor.getDisplay() });
-            // } else {
-            //     std.log.warn("no file: {s}", .{cursor.getDisplay()});
-            // }
-
-            // std.log.warn("{s}", .{cursor.getDisplay()});
-            return c.CXVisit_Continue;
-        }
-    };
-
     _ = c.clang_visitChildren(
         c.clang_getTranslationUnitCursor(tu),
-        T.debug_visitor,
-        // ClientData.visitor,
+        // T.debug_visitor,
+        ClientData.visitor,
         &data,
     );
 

@@ -61,6 +61,8 @@ fn onVisit(
         return c.CXVisit_Continue;
     }
 
+    cursor.debugPrint();
+
     var decl = Decl.init(_cursor);
     defer decl.deinit();
     switch (decl) {
@@ -101,10 +103,10 @@ fn onVisit(
                 loc.line,
                 loc.col,
                 // parent
-                parent.kindName(),
+                parent.getKindName(),
                 c.clang_hashCursor(parent.cursor),
                 // cursor
-                cursor.kindName(),
+                cursor.getKindName(),
                 c.clang_hashCursor(cursor.cursor),
                 cursor.getDisplay(),
             });
@@ -119,6 +121,10 @@ fn onVisit(
 }
 
 fn isAcceptable(this: @This(), cursor: CXCursor) bool {
+    if(cursor.isFromMainFile()){
+        return true;
+    }
+
     if (c.clang_getCString(cursor.filename)) |p| {
         const cursor_path = std.mem.span(p);
         std.log.debug("{s}, {s}", .{ this.entry_point, cursor_path });

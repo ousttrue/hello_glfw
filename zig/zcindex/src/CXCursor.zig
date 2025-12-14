@@ -3,12 +3,14 @@ const c = @import("cindex");
 const cxcursor_kind = @import("cxcursor_kind.zig");
 
 cursor: c.CXCursor,
+spelling: c.CXString,
 display: c.CXString,
 filename: c.CXString,
 
 pub fn init(cursor: c.CXCursor) @This() {
     var this = @This(){
         .cursor = cursor,
+        .spelling = c.clang_getCursorSpelling(cursor),
         .display = c.clang_getCursorDisplayName(cursor),
         .filename = undefined,
     };
@@ -21,8 +23,26 @@ pub fn init(cursor: c.CXCursor) @This() {
 }
 
 pub fn deinit(this: *@This()) void {
-    defer c.clang_disposeString(this.display);
-    defer c.clang_disposeString(this.filename);
+    c.clang_disposeString(this.spelling);
+    c.clang_disposeString(this.display);
+    c.clang_disposeString(this.filename);
+}
+
+pub fn debugPrint(this: @This()) void {
+    std.log.warn("[{s}] {s}", .{ this.getKindName(), this.getSpelling() });
+}
+
+pub fn isFromMainFile(this: @This()) bool {
+    const loc = c.clang_getCursorLocation(this.cursor);
+    return c.clang_Location_isFromMainFile(loc) != 0;
+}
+
+pub fn getSpelling(this: @This()) []const u8 {
+    if (c.clang_getCString(this.spelling)) |p| {
+        return std.mem.span(p);
+    } else {
+        return "";
+    }
 }
 
 pub fn getDisplay(this: @This()) []const u8 {
@@ -33,7 +53,7 @@ pub fn getDisplay(this: @This()) []const u8 {
     }
 }
 
-pub fn kindName(this: @This()) []const u8 {
+pub fn getKindName(this: @This()) []const u8 {
     if (cxcursor_kind.toName(this.cursor.kind)) |str| {
         const prefix = "CXCursor_";
         if (std.mem.startsWith(u8, str, prefix)) {
