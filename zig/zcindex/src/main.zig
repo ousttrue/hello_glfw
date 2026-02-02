@@ -116,22 +116,25 @@ test "cindex" {
         const cursor = data.getCursorByName("__unknown__");
         try std.testing.expect(cursor == null);
     }
-    // {
-    //     const cursor = data.getCursorByName("GetIO").?;
-    //     const decl = cx_declaration.createDeclaration(allocator).?;
-    //     defer decl.destroy();
-    //     try std.testing.expect(@as(cx_declaration.DeclarationType, decl) ==
-    //         cx_declaration.DeclarationType.function_decl);
-    //
-    //     const f = decl.function_decl;
-    //     const ret_decl = f.getReturnDecl();
-    //     try std.testing.expect(@as(cx_declaration.DeclarationType, ret_decl) ==
-    //         cx_declaration.DeclarationType.pointer);
-    //
-    //     const zig_src = try zig_generator.allocPrint(allocator, decl);
-    //     defer allocator.free(zig_src);
-    //     try std.testing.expectEqualSlices(u8, "extern fn GetIO() *ImGuiIO;", zig_src);
-    // }
+    {
+        const cursor = data.getCursorByName("GetIO").?;
+        var decl = (try cx_declaration.Type.createFromCursor(allocator, cursor)).?;
+        defer decl.destroy(allocator);
+        try std.testing.expect(@as(cx_declaration.Type, decl) == cx_declaration.Type.function);
+        const f = decl.function;
+        try std.testing.expectEqualSlices(u8, "GetIO", f.name);
+
+        // try std.testing.expect(@as(cx_declaration.Type, decl) == cx_declaration.Type.function);
+
+        //     const f = decl.function_decl;
+        //     const ret_decl = f.getReturnDecl();
+        //     try std.testing.expect(@as(cx_declaration.DeclarationType, ret_decl) ==
+        //         cx_declaration.DeclarationType.pointer);
+        //
+        //     const zig_src = try zig_generator.allocPrint(allocator, decl);
+        //     defer allocator.free(zig_src);
+        //     try std.testing.expectEqualSlices(u8, "extern fn GetIO() *ImGuiIO;", zig_src);
+    }
     // {
     //     const cursor = data.getCursorByName("ImGuiIO").?;
     //     const decl = cursor.getDeclaration();

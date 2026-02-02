@@ -26,6 +26,19 @@ pub fn write(writer: *std.Io.Writer, t: cx_declaration.Type) !void {
             }
             try writer.writeAll("};");
         },
+        .function => |function| {
+            try writer.print("pub extern fn {s}(", .{function.name});
+            for (function.params, 0..) |param, i| {
+                if (i > 0) {
+                    try writer.writeAll(", ");
+                }
+                try writer.print("{s}: ", .{param.name});
+                try write(writer, param.type_ref);
+            }
+            try writer.writeAll(") ");
+            try write(writer, function.ret_type);
+            try writer.writeAll(";");
+        },
         else => {
             return error.not_impl;
         },
@@ -88,5 +101,24 @@ test "container" {
             \\    value: u8,
             \\};
         , zig_src);
+    }
+}
+
+test "function" {
+    const allocator = std.testing.allocator;
+
+    {
+        var type_ref = cx_declaration.Type{
+            .function = try cx_declaration.FunctionType.create(allocator, "func", .{ .value = .{ .u8 = void{} } }, &.{
+                .{
+                    .name = "param0",
+                    .type_ref = .{ .value = .{ .u8 = void{} } },
+                },
+            }),
+        };
+        defer type_ref.destroy(allocator);
+        const zig_src = try allocPrint(allocator, type_ref);
+        defer allocator.free(zig_src);
+        try std.testing.expectEqualSlices(u8, "pub extern fn func(param0: u8) u8;", zig_src);
     }
 }
