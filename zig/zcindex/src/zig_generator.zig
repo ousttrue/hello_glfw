@@ -1,27 +1,26 @@
 const std = @import("std");
 const cx_declaration = @import("cx_declaration.zig");
 
-pub fn allocPrint(allocator: std.mem.Allocator, t: cx_declaration.Type) ![]const u8 {
+pub fn allocPrintDecl(allocator: std.mem.Allocator, t: cx_declaration.Type) ![]const u8 {
     var out = std.Io.Writer.Allocating.init(allocator);
     defer out.deinit();
-    try write(&out.writer, t);
+    try _allocPrintDecl(&out.writer, t);
     return out.toOwnedSlice();
 }
 
-pub fn write(writer: *std.Io.Writer, t: cx_declaration.Type) !void {
+pub fn _allocPrintDecl(writer: *std.Io.Writer, t: cx_declaration.Type) !void {
     switch (t) {
         .value => |v| {
             try writeValue(writer, v);
         },
         .pointer => |p| {
-            try writer.writeAll("[*c]");
-            try write(writer, p.type_ref);
+            try _allocPrintDeref(writer, p.type_ref);
         },
         .container => |container| {
             try writer.print("pub const {s} = struct {{\n", .{container.name});
             for (container.fields) |field| {
                 try writer.print("    {s}: ", .{field.name});
-                try write(writer, field.type_ref);
+                try _allocPrintDeref(writer, field.type_ref);
                 try writer.writeAll(",\n");
             }
             try writer.writeAll("};");
@@ -33,11 +32,43 @@ pub fn write(writer: *std.Io.Writer, t: cx_declaration.Type) !void {
                     try writer.writeAll(", ");
                 }
                 try writer.print("{s}: ", .{param.name});
-                try write(writer, param.type_ref);
+                try _allocPrintDeref(writer, param.type_ref);
             }
             try writer.writeAll(") ");
-            try write(writer, function.ret_type);
+            try _allocPrintDeref(writer, function.ret_type);
             try writer.writeAll(";");
+        },
+        else => {
+            return error.not_impl;
+        },
+    }
+}
+
+pub fn allocPrintDeref(allocator: std.mem.Allocator, t: cx_declaration.Type) ![]const u8 {
+    var out = std.Io.Writer.Allocating.init(allocator);
+    defer out.deinit();
+    try _allocPrintDeref(&out.writer, t);
+    return out.toOwnedSlice();
+}
+
+pub fn _allocPrintDeref(writer: *std.Io.Writer, t: cx_declaration.Type) !void {
+    switch (t) {
+        .value => |v| {
+            try writeValue(writer, v);
+        },
+        .pointer => |p| {
+            try writer.writeAll("[*c]");
+            try _allocPrintDeref(writer, p.type_ref);
+        },
+        .container => |container| {
+            // only name
+            try writer.print("{s}", .{container.name});
+        },
+        .function => {
+            unreachable;
+        },
+        .named => |name| {
+            try writer.writeAll(name);
         },
         else => {
             return error.not_impl;
@@ -47,8 +78,26 @@ pub fn write(writer: *std.Io.Writer, t: cx_declaration.Type) !void {
 
 pub fn writeValue(writer: *std.Io.Writer, v: cx_declaration.ValueType) !void {
     switch (v) {
+        .void => {
+            try writer.writeAll("void");
+        },
+        .bool => {
+            try writer.writeAll("bool");
+        },
         .u8 => {
             try writer.writeAll("u8");
+        },
+        .i8 => {
+            try writer.writeAll("i8");
+        },
+        .i32 => {
+            try writer.writeAll("i32");
+        },
+        .f32 => {
+            try writer.writeAll("f32");
+        },
+        .f64 => {
+            try writer.writeAll("f64");
         },
     }
 }
@@ -57,7 +106,7 @@ test "value" {
     const allocator = std.testing.allocator;
 
     {
-        const zig_src = try allocPrint(allocator, .{
+        const zig_src = try allocPrintDeref(allocator, .{
             .value = .{ .u8 = void{} },
         });
         defer allocator.free(zig_src);
@@ -75,7 +124,7 @@ test "pointer" {
             }),
         };
         defer type_ref.destroy(allocator);
-        const zig_src = try allocPrint(allocator, type_ref);
+        const zig_src = try allocPrintDeref(allocator, type_ref);
         defer allocator.free(zig_src);
         try std.testing.expectEqualSlices(u8, "[*c]u8", zig_src);
     }
@@ -94,7 +143,7 @@ test "container" {
             }),
         };
         defer type_ref.destroy(allocator);
-        const zig_src = try allocPrint(allocator, type_ref);
+        const zig_src = try allocPrintDecl(allocator, type_ref);
         defer allocator.free(zig_src);
         try std.testing.expectEqualSlices(u8,
             \\pub const Obj = struct {
@@ -108,6 +157,7 @@ test "function" {
     const allocator = std.testing.allocator;
 
     {
+        // u8
         var type_ref = cx_declaration.Type{
             .function = try cx_declaration.FunctionType.create(allocator, "func", .{ .value = .{ .u8 = void{} } }, &.{
                 .{
@@ -117,8 +167,91 @@ test "function" {
             }),
         };
         defer type_ref.destroy(allocator);
-        const zig_src = try allocPrint(allocator, type_ref);
+        const zig_src = try allocPrintDecl(allocator, type_ref);
         defer allocator.free(zig_src);
         try std.testing.expectEqualSlices(u8, "pub extern fn func(param0: u8) u8;", zig_src);
+    }
+    {
+        // [*c]u8
+        const p_type = try allocator.create(cx_declaration.PointerType);
+        p_type.* = .{
+            .type_ref = .{
+                .value = .{
+                    .u8 = void{},
+                },
+            },
+        };
+        var type_ref = cx_declaration.Type{
+            .function = try cx_declaration.FunctionType.create(allocator, "func", .{ .pointer = p_type }, &.{
+                .{
+                    .name = "param0",
+                    .type_ref = .{ .value = .{ .u8 = void{} } },
+                },
+            }),
+        };
+        defer type_ref.destroy(allocator);
+        const zig_src = try allocPrintDecl(allocator, type_ref);
+        defer allocator.free(zig_src);
+        try std.testing.expectEqualSlices(u8, "pub extern fn func(param0: u8) [*c]u8;", zig_src);
+    }
+    {
+        // struct Hoge
+        const p_type = try cx_declaration.ContainerType.create(allocator, "Hoge", &.{
+            .{
+                .name = "f1",
+                .type_ref = .{ .value = .{ .u8 = void{} } },
+            },
+            .{
+                .name = "f2",
+                .type_ref = .{ .value = .{ .u8 = void{} } },
+            },
+        });
+        var type_ref = cx_declaration.Type{
+            .function = try cx_declaration.FunctionType.create(allocator, "func", .{ .container = p_type }, &.{
+                .{
+                    .name = "param0",
+                    .type_ref = .{ .value = .{ .u8 = void{} } },
+                },
+            }),
+        };
+        defer type_ref.destroy(allocator);
+        const zig_src = try allocPrintDecl(allocator, type_ref);
+        defer allocator.free(zig_src);
+        try std.testing.expectEqualSlices(u8,
+            \\pub extern fn func(param0: u8) Hoge;
+        , zig_src);
+    }
+    {
+        // [*c]Hoge
+        const inner_type = try cx_declaration.ContainerType.create(allocator, "Hoge", &.{
+            .{
+                .name = "f1",
+                .type_ref = .{ .value = .{ .u8 = void{} } },
+            },
+            .{
+                .name = "f2",
+                .type_ref = .{ .value = .{ .u8 = void{} } },
+            },
+        });
+        const p_type = try allocator.create(cx_declaration.PointerType);
+        p_type.* = .{
+            .type_ref = .{
+                .container = inner_type,
+            },
+        };
+        var type_ref = cx_declaration.Type{
+            .function = try cx_declaration.FunctionType.create(allocator, "func", cx_declaration.Type{ .pointer = p_type }, &.{
+                .{
+                    .name = "param0",
+                    .type_ref = .{ .value = .{ .u8 = void{} } },
+                },
+            }),
+        };
+        defer type_ref.destroy(allocator);
+        const zig_src = try allocPrintDecl(allocator, type_ref);
+        defer allocator.free(zig_src);
+        try std.testing.expectEqualSlices(u8,
+            \\pub extern fn func(param0: u8) [*c]Hoge;
+        , zig_src);
     }
 }

@@ -6,7 +6,7 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const llvm_dir = b.option([]const u8, "llvm", "llvm path. like /usr/lib/llvm/20") orelse "/usr/lib/llvm/20";
+    const llvm_dir = b.option([]const u8, "llvm", "llvm path. like /usr/lib/llvm/20") orelse "/usr";
     const llvm_include = b.fmt("{s}/include", .{llvm_dir});
     const llvm_lib = b.fmt("{s}/lib64", .{llvm_dir});
 

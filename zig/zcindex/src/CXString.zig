@@ -7,6 +7,14 @@ pub fn init(str: c.CXString) @This() {
     return .{ .str = str };
 }
 
+pub fn initFromCursorKind(cursor: c.CXCursor) @This() {
+    return init(c.clang_getCursorKindSpelling(cursor.kind));
+}
+
+pub fn initFromTypeKind(cx_type: c.CXType) @This() {
+    return init(c.clang_getTypeKindSpelling(cx_type.kind));
+}
+
 pub fn deinit(this: @This()) void {
     c.clang_disposeString(this.str);
 }

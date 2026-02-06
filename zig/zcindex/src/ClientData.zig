@@ -52,7 +52,7 @@ fn onVisit(
     _cursor: c.CXCursor,
     _parent: c.CXCursor,
 ) !c.CXChildVisitResult {
-    var cursor = CXCursor.init(_cursor);
+    const cursor = CXCursor.init(_cursor);
 
     var parent = CXCursor.init(_parent);
     defer parent.deinit();
@@ -63,7 +63,7 @@ fn onVisit(
     }
     try this.cursors.append(this.allocator, cursor);
 
-    cursor.debugPrint();
+    // cursor.debugPrint();
 
     return switch (cursor.cursor.kind) {
         c.CXCursor_Namespace => c.CXChildVisit_Recurse,
@@ -78,7 +78,7 @@ fn isAcceptable(this: @This(), cursor: CXCursor) bool {
 
     if (c.clang_getCString(cursor.filename)) |p| {
         const cursor_path = std.mem.span(p);
-        std.log.debug("{s}, {s}", .{ this.entry_point, cursor_path });
+        // std.log.debug("{s}, {s}", .{ this.entry_point, cursor_path });
         if (std.mem.eql(u8, cursor_path, this.entry_point)) {
             return true;
         }

@@ -43,6 +43,19 @@ pub fn main() !void {
         ClientData.visitor,
         &data,
     );
+
+    for (data.cursors.items) |cursor| {
+        if (try cx_declaration.Type.createFromCursor(allocator, cursor)) |decl| {
+            defer decl.destroy(allocator);
+            const zig_src = try zig_generator.allocPrintDecl(allocator, decl);
+            defer allocator.free(zig_src);
+
+            try writer.interface.print("{s}\n", .{zig_src});
+            // const zig_src = try zig_generator.allocPrintDecl(allocator, decl);
+            // defer allocator.free(zig_src);
+            //
+        }
+    }
 }
 
 const T = struct {
@@ -118,22 +131,23 @@ test "cindex" {
     }
     {
         const cursor = data.getCursorByName("GetIO").?;
-        var decl = (try cx_declaration.Type.createFromCursor(allocator, cursor)).?;
-        defer decl.destroy(allocator);
-        try std.testing.expect(@as(cx_declaration.Type, decl) == cx_declaration.Type.function);
-        const f = decl.function;
-        try std.testing.expectEqualSlices(u8, "GetIO", f.name);
+        if (try cx_declaration.Type.createFromCursor(allocator, cursor)) |decl| {
+            defer decl.destroy(allocator);
+            try std.testing.expect(@as(cx_declaration.Type, decl) == cx_declaration.Type.function);
+            const f = decl.function;
+            try std.testing.expectEqualSlices(u8, "GetIO", f.name);
 
-        // try std.testing.expect(@as(cx_declaration.Type, decl) == cx_declaration.Type.function);
+            // try std.testing.expect(@as(cx_declaration.Type, decl) == cx_declaration.Type.function);
 
-        //     const f = decl.function_decl;
-        //     const ret_decl = f.getReturnDecl();
-        //     try std.testing.expect(@as(cx_declaration.DeclarationType, ret_decl) ==
-        //         cx_declaration.DeclarationType.pointer);
-        //
-        //     const zig_src = try zig_generator.allocPrint(allocator, decl);
-        //     defer allocator.free(zig_src);
-        //     try std.testing.expectEqualSlices(u8, "extern fn GetIO() *ImGuiIO;", zig_src);
+            //     const f = decl.function_decl;
+            //     const ret_decl = f.getReturnDecl();
+            //     try std.testing.expect(@as(cx_declaration.DeclarationType, ret_decl) ==
+            //         cx_declaration.DeclarationType.pointer);
+
+            const zig_src = try zig_generator.allocPrintDecl(allocator, decl);
+            defer allocator.free(zig_src);
+            try std.testing.expectEqualSlices(u8, "pub extern fn GetIO() [*c]ImGuiIO;", zig_src);
+        }
     }
     // {
     //     const cursor = data.getCursorByName("ImGuiIO").?;

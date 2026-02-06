@@ -92,7 +92,7 @@ pub fn fromContents(
     allocator: std.mem.Allocator,
     _contents: []const u8,
 ) !@This() {
-    std.log.warn("contents => '{s}'", .{_contents});
+    // std.log.warn("contents => '{s}'", .{_contents});
 
     var this = try @This().init(allocator);
 
@@ -124,10 +124,10 @@ pub fn deinit(this: *@This()) void {
 pub fn parse(this: *@This()) !c.CXTranslationUnit {
     const index = c.clang_createIndex(0, 0);
 
-    std.log.warn("entry_point => {s}", .{this.entry_point});
-    for (this.command_line.items, 0..) |command, i| {
-        std.log.warn("[{:2}] {s}", .{ i, command });
-    }
+    // std.log.warn("entry_point => {s}", .{this.entry_point});
+    // for (this.command_line.items, 0..) |command, i| {
+    //     std.log.warn("[{:2}] {s}", .{ i, command });
+    // }
 
     var tu: c.CXTranslationUnit = undefined;
     const result = c.clang_parseTranslationUnit2(index,
