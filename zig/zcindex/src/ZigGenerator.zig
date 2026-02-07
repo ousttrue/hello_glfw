@@ -1,14 +1,27 @@
 const std = @import("std");
 const cx_declaration = @import("cx_declaration.zig");
+const ZigGenerator = @This();
 
-pub fn allocPrintDecl(allocator: std.mem.Allocator, t: cx_declaration.Type) ![]const u8 {
+usedMap: std.StringHashMap(u32),
+
+pub fn init(allocator: std.mem.Allocator) @This() {
+    return .{
+        .usedMap = .init(allocator),
+    };
+}
+
+pub fn deinit(this: *@This()) void {
+    this.usedMap.deinit();
+}
+
+pub fn allocPrintDecl(this: *@This(), allocator: std.mem.Allocator, t: cx_declaration.Type) ![]const u8 {
     var out = std.Io.Writer.Allocating.init(allocator);
     defer out.deinit();
-    try _allocPrintDecl(&out.writer, t);
+    try this._allocPrintDecl(&out.writer, t);
     return out.toOwnedSlice();
 }
 
-pub fn _allocPrintDecl(writer: *std.Io.Writer, t: cx_declaration.Type) !void {
+fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Type) !void {
     switch (t) {
         .value => |v| {
             try writeValue(writer, v);
@@ -26,6 +39,15 @@ pub fn _allocPrintDecl(writer: *std.Io.Writer, t: cx_declaration.Type) !void {
             try writer.writeAll("};");
         },
         .function => |function| {
+            if (std.mem.startsWith(u8, function.name, "operator ")) {
+                return;
+            }
+            const e = try this.usedMap.getOrPut(function.name);
+            if (e.found_existing) {
+                return;
+            }
+            e.value_ptr.* = 1;
+
             try writer.print("pub extern fn {s}(", .{function.name});
             for (function.params, 0..) |param, i| {
                 if (i > 0) {
@@ -44,14 +66,14 @@ pub fn _allocPrintDecl(writer: *std.Io.Writer, t: cx_declaration.Type) !void {
     }
 }
 
-pub fn allocPrintDeref(allocator: std.mem.Allocator, t: cx_declaration.Type) ![]const u8 {
+fn allocPrintDeref(allocator: std.mem.Allocator, t: cx_declaration.Type) ![]const u8 {
     var out = std.Io.Writer.Allocating.init(allocator);
     defer out.deinit();
     try _allocPrintDeref(&out.writer, t);
     return out.toOwnedSlice();
 }
 
-pub fn _allocPrintDeref(writer: *std.Io.Writer, t: cx_declaration.Type) !void {
+fn _allocPrintDeref(writer: *std.Io.Writer, t: cx_declaration.Type) !void {
     switch (t) {
         .value => |v| {
             try writeValue(writer, v);
@@ -76,7 +98,7 @@ pub fn _allocPrintDeref(writer: *std.Io.Writer, t: cx_declaration.Type) !void {
     }
 }
 
-pub fn writeValue(writer: *std.Io.Writer, v: cx_declaration.ValueType) !void {
+fn writeValue(writer: *std.Io.Writer, v: cx_declaration.ValueType) !void {
     switch (v) {
         .void => {
             try writer.writeAll("void");
@@ -134,6 +156,8 @@ test "container" {
     const allocator = std.testing.allocator;
 
     {
+        var zig_generator = ZigGenerator.init(allocator);
+        defer zig_generator.deinit();
         var type_ref = cx_declaration.Type{
             .container = try cx_declaration.ContainerType.create(allocator, "Obj", &.{
                 .{
@@ -143,7 +167,7 @@ test "container" {
             }),
         };
         defer type_ref.destroy(allocator);
-        const zig_src = try allocPrintDecl(allocator, type_ref);
+        const zig_src = try zig_generator.allocPrintDecl(allocator, type_ref);
         defer allocator.free(zig_src);
         try std.testing.expectEqualSlices(u8,
             \\pub const Obj = struct {
@@ -157,6 +181,9 @@ test "function" {
     const allocator = std.testing.allocator;
 
     {
+        var zig_generator = ZigGenerator.init(allocator);
+        defer zig_generator.deinit();
+
         // u8
         var type_ref = cx_declaration.Type{
             .function = try cx_declaration.FunctionType.create(allocator, "func", .{ .value = .{ .u8 = void{} } }, &.{
@@ -167,11 +194,14 @@ test "function" {
             }),
         };
         defer type_ref.destroy(allocator);
-        const zig_src = try allocPrintDecl(allocator, type_ref);
+        const zig_src = try zig_generator.allocPrintDecl(allocator, type_ref);
         defer allocator.free(zig_src);
         try std.testing.expectEqualSlices(u8, "pub extern fn func(param0: u8) u8;", zig_src);
     }
     {
+        var zig_generator = ZigGenerator.init(allocator);
+        defer zig_generator.deinit();
+
         // [*c]u8
         const p_type = try allocator.create(cx_declaration.PointerType);
         p_type.* = .{
@@ -190,11 +220,14 @@ test "function" {
             }),
         };
         defer type_ref.destroy(allocator);
-        const zig_src = try allocPrintDecl(allocator, type_ref);
+        const zig_src = try zig_generator.allocPrintDecl(allocator, type_ref);
         defer allocator.free(zig_src);
         try std.testing.expectEqualSlices(u8, "pub extern fn func(param0: u8) [*c]u8;", zig_src);
     }
     {
+        var zig_generator = ZigGenerator.init(allocator);
+        defer zig_generator.deinit();
+
         // struct Hoge
         const p_type = try cx_declaration.ContainerType.create(allocator, "Hoge", &.{
             .{
@@ -215,13 +248,16 @@ test "function" {
             }),
         };
         defer type_ref.destroy(allocator);
-        const zig_src = try allocPrintDecl(allocator, type_ref);
+        const zig_src = try zig_generator.allocPrintDecl(allocator, type_ref);
         defer allocator.free(zig_src);
         try std.testing.expectEqualSlices(u8,
             \\pub extern fn func(param0: u8) Hoge;
         , zig_src);
     }
     {
+        var zig_generator = ZigGenerator.init(allocator);
+        defer zig_generator.deinit();
+
         // [*c]Hoge
         const inner_type = try cx_declaration.ContainerType.create(allocator, "Hoge", &.{
             .{
@@ -248,7 +284,7 @@ test "function" {
             }),
         };
         defer type_ref.destroy(allocator);
-        const zig_src = try allocPrintDecl(allocator, type_ref);
+        const zig_src = try zig_generator.allocPrintDecl(allocator, type_ref);
         defer allocator.free(zig_src);
         try std.testing.expectEqualSlices(u8,
             \\pub extern fn func(param0: u8) [*c]Hoge;

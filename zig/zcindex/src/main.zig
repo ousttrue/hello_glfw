@@ -6,7 +6,7 @@ const c = @import("cindex");
 const CIndexParser = @import("CIndexParsr.zig");
 const ClientData = @import("ClientData.zig");
 const CXCursor = @import("CXCursor.zig");
-const zig_generator = @import("zig_generator.zig");
+const ZigGenerator = @import("ZigGenerator.zig");
 const cx_declaration = @import("cx_declaration.zig");
 
 pub fn main() !void {
@@ -44,10 +44,12 @@ pub fn main() !void {
         &data,
     );
 
+    var g = ZigGenerator.init(allocator);
+    defer g.deinit();
     for (data.cursors.items) |cursor| {
         if (try cx_declaration.Type.createFromCursor(allocator, cursor)) |decl| {
             defer decl.destroy(allocator);
-            const zig_src = try zig_generator.allocPrintDecl(allocator, decl);
+            const zig_src = try g.allocPrintDecl(allocator, decl);
             defer allocator.free(zig_src);
 
             try writer.interface.print("{s}\n", .{zig_src});
@@ -89,7 +91,7 @@ const T = struct {
 
 test {
     _ = cx_declaration;
-    _ = zig_generator;
+    // _ = zig_generator;
     std.testing.refAllDecls(@This());
     // std.testing.refAllDeclsRecursive(@import("root"));
 }
@@ -144,6 +146,8 @@ test "cindex" {
             //     try std.testing.expect(@as(cx_declaration.DeclarationType, ret_decl) ==
             //         cx_declaration.DeclarationType.pointer);
 
+            var zig_generator = ZigGenerator.init(allocator);
+            defer zig_generator.deinit();
             const zig_src = try zig_generator.allocPrintDecl(allocator, decl);
             defer allocator.free(zig_src);
             try std.testing.expectEqualSlices(u8, "pub extern fn GetIO() [*c]ImGuiIO;", zig_src);
