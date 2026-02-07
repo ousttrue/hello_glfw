@@ -70,6 +70,13 @@ pub fn main() !void {
     }
 }
 
+test {
+    _ = cx_declaration;
+    // _ = zig_generator;
+    std.testing.refAllDecls(@This());
+    // std.testing.refAllDeclsRecursive(@import("root"));
+}
+
 export fn debug_visitor(
     _cursor: c.CXCursor,
     _parent: c.CXCursor,
@@ -80,28 +87,23 @@ export fn debug_visitor(
     var cursor = CXCursor.init(_cursor, _parent);
     defer cursor.deinit();
 
-    // var parent = CXCursor.init(_parent, .{});
-    // defer parent.deinit();
-
-    cursor.debugPrint();
+    switch (cursor.cursor.kind) {
+        c.CXCursor_MacroDefinition => {},
+        else => {
+            cursor.debugPrint();
+        },
+    }
     // std.log.warn("{s}:{}:{} => {s}", .{ loc.path, loc.line, loc.col, cursor.getDisplay() });
 
-    // if (c.clang_getCString(cursor.filename)) |p| {
-    //     const cursor_path = std.mem.span(p);
-    //     std.log.warn("=> {s}: {s}", .{ cursor_path, cursor.getDisplay() });
-    // } else {
-    //     std.log.warn("no file: {s}", .{cursor.getDisplay()});
-    // }
-
-    // std.log.warn("{s}", .{cursor.getDisplay()});
-    return c.CXVisit_Continue;
+    return c.CXChildVisit_Recurse;
 }
 
 // test "debug visitor" {
 //     const allocator = std.testing.allocator;
 //     const contents =
-//         \\struct Hoge{
-//         \\  int a;
+//         \\enum Hoge {
+//         \\  HOGE_X = 1,
+//         \\  HOGE_Y = 2,
 //         \\};
 //     ;
 //     var cindex_parser = try CIndexParser.fromContents(allocator, contents);
@@ -112,26 +114,12 @@ export fn debug_visitor(
 //     const tu = _tu orelse @panic("parse");
 //     defer c.clang_disposeTranslationUnit(tu);
 //
-//     var data = ClientData.init(
-//         allocator,
-//         cindex_parser.entry_point,
-//         cindex_parser.include_dirs.items,
-//     );
-//     defer data.deinit();
-//
 //     _ = c.clang_visitChildren(
 //         c.clang_getTranslationUnitCursor(tu),
 //         debug_visitor,
-//         &data,
+//         null,
 //     );
 // }
-
-test {
-    _ = cx_declaration;
-    // _ = zig_generator;
-    std.testing.refAllDecls(@This());
-    // std.testing.refAllDeclsRecursive(@import("root"));
-}
 
 test "cindex" {
     const allocator = std.testing.allocator;
@@ -250,6 +238,62 @@ test "zig struct" {
     try std.testing.expectEqualSlices(u8,
         \\pub const Hoge = struct {
         \\    a: i32,
+        \\};
+    , zig_src);
+}
+
+// const ENUM = enum(c_int) 
+// {
+//     A = 1,
+//     B = 3,
+// };
+// const E = std.enums.EnumFieldStruct(ENUM, bool, false);
+//
+// test "EnumSet" {
+//     const e = E{};
+//
+//     try std.testing.expectEqual(0, @as(u2, @bitCast(e.bits)));
+// }
+
+test "zig enum" {
+    const allocator = std.testing.allocator;
+    const contents =
+        \\enum ImGuiWindowFlags_
+        \\{
+        \\    ImGuiWindowFlags_None                   = 0,
+        \\};
+    ;
+    var cindex_parser = try CIndexParser.fromContents(allocator, contents);
+    defer cindex_parser.deinit();
+
+    const _tu = try cindex_parser.parse();
+    try std.testing.expect(_tu != null);
+    const tu = _tu orelse @panic("parse");
+    defer c.clang_disposeTranslationUnit(tu);
+
+    var data = ClientData.init(
+        allocator,
+        cindex_parser.entry_point,
+        cindex_parser.include_dirs.items,
+    );
+    defer data.deinit();
+    _ = c.clang_visitChildren(
+        c.clang_getTranslationUnitCursor(tu),
+        ClientData.visitor,
+        &data,
+    );
+
+    const cursor = data.getCursorByName("ImGuiWindowFlags_").?;
+    const decl = (try cx_declaration.Type.createFromCursor(allocator, cursor)).?;
+    defer decl.destroy(allocator);
+
+    var zig_generator = ZigGenerator.init(allocator);
+    defer zig_generator.deinit();
+    const zig_src = try zig_generator.allocPrintDecl(allocator, decl);
+    defer allocator.free(zig_src);
+    try std.testing.expectEqualSlices(u8,
+        \\pub const ImGuiWindowFlags_ = enum(i32) {
+        \\    ImGuiWindowFlags_None = 0,
         \\};
     , zig_src);
 }

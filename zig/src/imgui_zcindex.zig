@@ -91,7 +91,8 @@ pub fn main() void {
 
     // ImGui::CreateContext();
     const io = imgui.GetIO().?;
-    io.ConfigFlags |= imgui.ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
+    _ = io;
+    // io.ConfigFlags = io.ConfigFlags | imgui.ImGuiConfigFlags_.ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
     //     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
     //
     //     // Setup Dear ImGui style

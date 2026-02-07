@@ -35,7 +35,10 @@ pub fn deinit(this: *@This()) void {
 }
 
 pub fn debugPrint(this: @This()) void {
-    std.log.warn("[{s}] {s}", .{ this.getKindName(), this.getSpelling() });
+    const pp = c.clang_getCursorPrettyPrinted(this.cursor, null);
+    defer c.clang_disposeString(pp);
+    const ppp = c.clang_getCString(pp);
+    std.log.warn("[{s}] {s} => {s}", .{ this.getKindName(), this.getSpelling(), std.mem.span(ppp) });
 }
 
 pub fn isFromMainFile(this: @This()) bool {

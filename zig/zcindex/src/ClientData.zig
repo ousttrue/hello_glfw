@@ -72,6 +72,7 @@ fn onVisit(
     return switch (cursor.cursor.kind) {
         c.CXCursor_Namespace => c.CXChildVisit_Recurse,
         c.CXCursor_StructDecl => c.CXChildVisit_Recurse,
+        c.CXCursor_EnumDecl => c.CXChildVisit_Recurse,
         else => c.CXChildVisit_Continue,
     };
 }

@@ -85,7 +85,7 @@ pub const ArrayType = struct {
 
 pub const ContainerType = struct {
     pub const Field = struct {
-        name: []const u8,
+        name: CXString,
         type_ref: Type,
     };
 
@@ -97,28 +97,44 @@ pub const ContainerType = struct {
         name: []const u8,
         fields: []const Field,
     ) !*@This() {
-        var new_fields = try allocator.alloc(Field, fields.len);
-        for (fields, 0..) |field, i| {
-            new_fields[i] = .{
-                .name = try allocator.dupe(u8, field.name),
-                .type_ref = field.type_ref,
-            };
-        }
         const this = try allocator.create(@This());
         this.* = .{
             .name = name,
-            .fields = new_fields,
+            .fields = try allocator.dupe(Field, fields),
         };
         return this;
     }
 
     pub fn destroy(this: *const @This(), allocator: std.mem.Allocator) void {
         for (this.fields) |*field| {
-            allocator.free(field.name);
+            field.name.deinit();
             field.type_ref.destroy(allocator);
         }
         allocator.free(this.fields);
         allocator.destroy(this);
+    }
+
+    pub fn getFields(allocator: std.mem.Allocator, children: []c.CXCursor) ![]Field {
+        var index: usize = 0;
+        for (children) |child| {
+            if (child.kind == c.CXCursor_FieldDecl) {
+                index += 1;
+            }
+        }
+        var fields = try allocator.alloc(Field, index);
+
+        index = 0;
+        for (children) |child| {
+            if (child.kind == c.CXCursor_FieldDecl) {
+                fields[index] = .{
+                    .name = CXString.initFromCursorSpelling(child),
+                    .type_ref = try createFromType(allocator, c.clang_getCursorType(child)),
+                };
+                index += 1;
+            }
+        }
+
+        return fields;
     }
 };
 
@@ -158,12 +174,12 @@ pub const FunctionType = struct {
 
 pub const EnumType = struct {
     pub const Value = struct {
-        name: []const u8,
-        value: i32,
+        name: CXString,
+        value: i64,
     };
 
     name: []const u8,
-    values: []Value,
+    values: []const Value,
 
     pub fn create(
         allocator: std.mem.Allocator,
@@ -173,13 +189,40 @@ pub const EnumType = struct {
         const this = try allocator.create(@This());
         this.* = .{
             .name = name,
-            .values = values,
+            .values = try allocator.dupe(Value, values),
         };
         return this;
     }
 
     pub fn destroy(this: *const @This(), allocator: std.mem.Allocator) void {
+        for (this.values) |value| {
+            value.name.deinit();
+        }
+        allocator.free(this.values);
         allocator.destroy(this);
+    }
+
+    pub fn getValues(allocator: std.mem.Allocator, children: []c.CXCursor) ![]Value {
+        var index: usize = 0;
+        for (children) |child| {
+            if (child.kind == c.CXCursor_EnumConstantDecl) {
+                index += 1;
+            }
+        }
+        var values = try allocator.alloc(Value, index);
+
+        index = 0;
+        for (children) |child| {
+            if (child.kind == c.CXCursor_EnumConstantDecl) {
+                values[index] = .{
+                    .name = CXString.initFromCursorSpelling(child),
+                    .value = c.clang_getEnumConstantDeclValue(child),
+                };
+                index += 1;
+            }
+        }
+
+        return values;
     }
 };
 
@@ -196,31 +239,8 @@ pub const Type = union(enum) {
     pub fn createFromCursor(allocator: std.mem.Allocator, cursor: CXCursor) !?@This() {
         return switch (cursor.cursor.kind) {
             c.CXCursor_StructDecl => blk: {
-                var field_index: usize = 0;
-                for (cursor.children.items) |child| {
-                    if (child.kind == c.CXCursor_FieldDecl) {
-                        field_index += 1;
-                    }
-                }
-                const fields = try allocator.alloc(ContainerType.Field, field_index);
+                const fields = try ContainerType.getFields(allocator, cursor.children.items);
                 defer allocator.free(fields);
-                field_index = 0;
-                for (cursor.children.items) |child| {
-                    if (child.kind == c.CXCursor_FieldDecl) {
-                        const spelling = CXString.initFromCursorSpelling(child);
-                        defer spelling.deinit();
-                        fields[field_index] = .{
-                            .name = try allocator.dupe(u8, spelling.toString()),
-                            .type_ref = try createFromType(allocator, c.clang_getCursorType(child)),
-                        };
-                        field_index += 1;
-                    }
-                }
-                defer {
-                    for (fields) |field| {
-                        allocator.free(field.name);
-                    }
-                }
                 break :blk .{
                     .container = try ContainerType.create(
                         allocator,
@@ -230,6 +250,28 @@ pub const Type = union(enum) {
                 };
             },
             c.CXCursor_FieldDecl => null,
+            //
+            c.CXCursor_EnumDecl => blk: {
+                // TODO
+                // break :blk .{
+                //     .typedef = try TypedefType.create(
+                //         allocator,
+                //         cursor.getSpelling(),
+                //         .{ .value = .i32 },
+                //     ),
+                // };
+                const values = try EnumType.getValues(allocator, cursor.children.items);
+                defer allocator.free(values);
+                break :blk .{
+                    .int_enum = try EnumType.create(
+                        allocator,
+                        cursor.getSpelling(),
+                        values,
+                    ),
+                };
+            },
+            c.CXCursor_EnumConstantDecl => null,
+            //
             c.CXCursor_TypedefDecl => .{
                 .typedef = try TypedefType.create(
                     allocator,
@@ -237,16 +279,7 @@ pub const Type = union(enum) {
                     try createFromType(allocator, c.clang_getTypedefDeclUnderlyingType(cursor.cursor)),
                 ),
             },
-            c.CXCursor_EnumDecl => blk: {
-                // TODO
-                break :blk .{
-                    .typedef = try TypedefType.create(
-                        allocator,
-                        cursor.getSpelling(),
-                        .{ .value = .i32 },
-                    ),
-                };
-            },
+            //
             c.CXCursor_FunctionDecl => .{
                 .function = try FunctionType.create(
                     allocator,
@@ -277,73 +310,6 @@ pub const Type = union(enum) {
         };
     }
 
-    // https://clang.llvm.org/docs/LibClang.html
-    // https://github.com/ousttrue/luajitffi/blob/master/clangffi/types.lua
-    pub fn createFromType(allocator: std.mem.Allocator, cx_type: c.CXType) !@This() {
-        return switch (cx_type.kind) {
-            c.CXType_Void => @This(){ .value = .void },
-            c.CXType_Bool => @This(){ .value = .bool },
-            c.CXType_Char_S, c.CXType_SChar => @This(){ .value = .i8 },
-            c.CXType_Short => @This(){ .value = .i16 },
-            c.CXType_Int => @This(){ .value = .i32 },
-            c.CXType_LongLong => @This(){ .value = .i64 },
-            c.CXType_UChar => @This(){ .value = .u8 },
-            c.CXType_UShort => @This(){ .value = .u16 },
-            c.CXType_UInt => @This(){ .value = .u32 },
-            c.CXType_ULongLong => @This(){ .value = .u64 },
-            c.CXType_Float => @This(){ .value = .f32 },
-            c.CXType_Double => @This(){ .value = .f64 },
-            c.CXType_Pointer, c.CXType_LValueReference => blk: {
-                const pointee_type = c.clang_getPointeeType(cx_type);
-                const ptr = try allocator.create(PointerType);
-                ptr.* = .{
-                    .type_ref = try createFromType(allocator, pointee_type),
-                };
-                break :blk @This(){
-                    .pointer = ptr,
-                };
-            },
-            c.CXType_ConstantArray => blk: {
-                const array_type = c.clang_getArrayElementType(cx_type);
-                const len: usize = @intCast(c.clang_getArraySize(cx_type));
-                const array = try allocator.create(ArrayType);
-                array.* = .{
-                    .type_ref = try createFromType(allocator, array_type),
-                    .len = len,
-                };
-                break :blk @This(){
-                    .array = array,
-                };
-            },
-            c.CXType_FunctionProto => blk: {
-                // const ptr = try allocator.create(PointerType);
-                // ptr.* = .{
-                //     .type_ref = .{ .value = .void },
-                // };
-                // break :blk @This(){
-                //     .pointer = ptr,
-                // };
-                break :blk .{ .value = .void };
-            },
-            c.CXType_Elaborated => blk: {
-                // struct
-                const spelling = c.clang_getTypeSpelling(cx_type);
-                defer c.clang_disposeString(spelling);
-                const str = c.clang_getCString(spelling);
-                const slice = std.mem.span(str);
-                break :blk .{
-                    .named = try allocator.dupe(u8, slice),
-                };
-            },
-            else => {
-                const str = CXString.initFromTypeKind(cx_type);
-                defer str.deinit();
-                std.log.warn("createFromType => {s}", .{str.toString()});
-                @panic("UNKNOWN");
-            },
-        };
-    }
-
     pub fn destroy(this: *const @This(), allocator: std.mem.Allocator) void {
         switch (this.*) {
             .value => {},
@@ -362,8 +328,8 @@ pub const Type = union(enum) {
             .function => |function| {
                 function.destroy(allocator);
             },
-            .int_enum => {
-                @panic("not impl");
+            .int_enum => |int_enum| {
+                int_enum.destroy(allocator);
             },
             .named => |name| {
                 allocator.free(name);
@@ -371,3 +337,70 @@ pub const Type = union(enum) {
         }
     }
 };
+
+// https://clang.llvm.org/docs/LibClang.html
+// https://github.com/ousttrue/luajitffi/blob/master/clangffi/types.lua
+fn createFromType(allocator: std.mem.Allocator, cx_type: c.CXType) !Type {
+    return switch (cx_type.kind) {
+        c.CXType_Void => Type{ .value = .void },
+        c.CXType_Bool => Type{ .value = .bool },
+        c.CXType_Char_S, c.CXType_SChar => Type{ .value = .i8 },
+        c.CXType_Short => Type{ .value = .i16 },
+        c.CXType_Int => Type{ .value = .i32 },
+        c.CXType_LongLong => Type{ .value = .i64 },
+        c.CXType_UChar => Type{ .value = .u8 },
+        c.CXType_UShort => Type{ .value = .u16 },
+        c.CXType_UInt => Type{ .value = .u32 },
+        c.CXType_ULongLong => Type{ .value = .u64 },
+        c.CXType_Float => Type{ .value = .f32 },
+        c.CXType_Double => Type{ .value = .f64 },
+        c.CXType_Pointer, c.CXType_LValueReference => blk: {
+            const pointee_type = c.clang_getPointeeType(cx_type);
+            const ptr = try allocator.create(PointerType);
+            ptr.* = .{
+                .type_ref = try createFromType(allocator, pointee_type),
+            };
+            break :blk Type{
+                .pointer = ptr,
+            };
+        },
+        c.CXType_ConstantArray => blk: {
+            const array_type = c.clang_getArrayElementType(cx_type);
+            const len: usize = @intCast(c.clang_getArraySize(cx_type));
+            const array = try allocator.create(ArrayType);
+            array.* = .{
+                .type_ref = try createFromType(allocator, array_type),
+                .len = len,
+            };
+            break :blk Type{
+                .array = array,
+            };
+        },
+        c.CXType_FunctionProto => blk: {
+            // const ptr = try allocator.create(PointerType);
+            // ptr.* = .{
+            //     .type_ref = .{ .value = .void },
+            // };
+            // break :blk Type{
+            //     .pointer = ptr,
+            // };
+            break :blk .{ .value = .void };
+        },
+        c.CXType_Elaborated => blk: {
+            // struct
+            const spelling = c.clang_getTypeSpelling(cx_type);
+            defer c.clang_disposeString(spelling);
+            const str = c.clang_getCString(spelling);
+            const slice = std.mem.span(str);
+            break :blk .{
+                .named = try allocator.dupe(u8, slice),
+            };
+        },
+        else => {
+            const str = CXString.initFromTypeKind(cx_type);
+            defer str.deinit();
+            std.log.warn("createFromType => {s}", .{str.toString()});
+            @panic("UNKNOWN");
+        },
+    };
+}

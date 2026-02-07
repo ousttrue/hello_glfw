@@ -14,6 +14,10 @@ const c_to_zig = std.StaticStringMap([]const u8).initComptime(&.{
     .{ "float", "f32" },
 });
 
+// const enum_typedef_list = [_][]const u8{
+//     "ImGuiConfigFlags", // typedef int ImGuiConfigFlags -> enum ImGuiConfigFlags_
+// };
+
 usedMap: std.StringHashMap(u32),
 
 pub fn init(allocator: std.mem.Allocator) @This() {
@@ -45,6 +49,13 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             try _allocPrintDeref(writer, a.type_ref);
         },
         .typedef => |typedef| {
+            // for (enum_typedef_list) |name| {
+            //     if (std.mem.eql(u8, typedef.name, name)) {
+            //         // skip
+            //         return;
+            //     }
+            // }
+
             const e = try this.usedMap.getOrPut(typedef.name);
             if (e.found_existing) {
                 return;
@@ -73,12 +84,37 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             }
             e.value_ptr.* = 1;
 
-            // try writer.print("pub const {s} = opaque{{}};", .{container.name});
             try writer.print("pub const {s} = struct {{\n", .{container.name});
             for (container.fields) |field| {
-                try writer.print("    {s}: ", .{field.name});
+                try writer.print("    {s}: ", .{field.name.toString()});
                 try _allocPrintDeref(writer, field.type_ref);
                 try writer.writeAll(",\n");
+            }
+            try writer.writeAll("};");
+        },
+        .int_enum => |int_enum| {
+            if (int_enum.values.len == 0) {
+                return;
+            }
+            const e = try this.usedMap.getOrPut(int_enum.name);
+            if (e.found_existing) {
+                return;
+            }
+            e.value_ptr.* = 1;
+
+            const enum_name = int_enum.name;
+            // if (std.mem.endsWith(u8, enum_name, "_")) {
+            //     for (enum_typedef_list) |name| {
+            //         if (std.mem.startsWith(u8, enum_name, name)) {
+            //             enum_name = name;
+            //             break;
+            //         }
+            //     }
+            // }
+
+            try writer.print("pub const {s} = enum(i32) {{\n", .{enum_name});
+            for (int_enum.values) |value| {
+                try writer.print("    {s} = {},\n", .{ value.name.toString(), value.value });
             }
             try writer.writeAll("};");
         },
@@ -104,8 +140,9 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             try _allocPrintDeref(writer, function.ret_type);
             try writer.writeAll(";");
         },
-        .int_enum => {},
-        .named => {},
+        .named => {
+            unreachable;
+        },
     }
 }
 
@@ -214,31 +251,6 @@ test "pointer" {
     }
 }
 
-test "container" {
-    const allocator = std.testing.allocator;
-
-    {
-        var zig_generator = ZigGenerator.init(allocator);
-        defer zig_generator.deinit();
-        var type_ref = cx_declaration.Type{
-            .container = try cx_declaration.ContainerType.create(allocator, "Obj", &.{
-                .{
-                    .name = "value",
-                    .type_ref = .{ .value = .{ .u8 = void{} } },
-                },
-            }),
-        };
-        defer type_ref.destroy(allocator);
-        const zig_src = try zig_generator.allocPrintDecl(allocator, type_ref);
-        defer allocator.free(zig_src);
-        try std.testing.expectEqualSlices(u8,
-            \\pub const Obj = struct {
-            \\    value: u8,
-            \\};
-        , zig_src);
-    }
-}
-
 test "function" {
     const allocator = std.testing.allocator;
 
@@ -285,71 +297,5 @@ test "function" {
         const zig_src = try zig_generator.allocPrintDecl(allocator, type_ref);
         defer allocator.free(zig_src);
         try std.testing.expectEqualSlices(u8, "pub extern fn func(param0: u8) ?*u8;", zig_src);
-    }
-    {
-        var zig_generator = ZigGenerator.init(allocator);
-        defer zig_generator.deinit();
-
-        // struct Hoge
-        const p_type = try cx_declaration.ContainerType.create(allocator, "Hoge", &.{
-            .{
-                .name = "f1",
-                .type_ref = .{ .value = .{ .u8 = void{} } },
-            },
-            .{
-                .name = "f2",
-                .type_ref = .{ .value = .{ .u8 = void{} } },
-            },
-        });
-        var type_ref = cx_declaration.Type{
-            .function = try cx_declaration.FunctionType.create(allocator, "func", .{ .container = p_type }, &.{
-                .{
-                    .name = "param0",
-                    .type_ref = .{ .value = .{ .u8 = void{} } },
-                },
-            }),
-        };
-        defer type_ref.destroy(allocator);
-        const zig_src = try zig_generator.allocPrintDecl(allocator, type_ref);
-        defer allocator.free(zig_src);
-        try std.testing.expectEqualSlices(u8,
-            \\pub extern fn func(param0: u8) Hoge;
-        , zig_src);
-    }
-    {
-        var zig_generator = ZigGenerator.init(allocator);
-        defer zig_generator.deinit();
-
-        // [*c]Hoge
-        const inner_type = try cx_declaration.ContainerType.create(allocator, "Hoge", &.{
-            .{
-                .name = "f1",
-                .type_ref = .{ .value = .{ .u8 = void{} } },
-            },
-            .{
-                .name = "f2",
-                .type_ref = .{ .value = .{ .u8 = void{} } },
-            },
-        });
-        const p_type = try allocator.create(cx_declaration.PointerType);
-        p_type.* = .{
-            .type_ref = .{
-                .container = inner_type,
-            },
-        };
-        var type_ref = cx_declaration.Type{
-            .function = try cx_declaration.FunctionType.create(allocator, "func", cx_declaration.Type{ .pointer = p_type }, &.{
-                .{
-                    .name = "param0",
-                    .type_ref = .{ .value = .{ .u8 = void{} } },
-                },
-            }),
-        };
-        defer type_ref.destroy(allocator);
-        const zig_src = try zig_generator.allocPrintDecl(allocator, type_ref);
-        defer allocator.free(zig_src);
-        try std.testing.expectEqualSlices(u8,
-            \\pub extern fn func(param0: u8) ?*Hoge;
-        , zig_src);
     }
 }
