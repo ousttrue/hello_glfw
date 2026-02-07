@@ -36,7 +36,7 @@ pub fn debugPrint(this: @This()) void {
     const ppp = c.clang_getCString(pp);
     const kind_name = CXString.initFromCursorKind(this.cursor);
     defer kind_name.deinit();
-    const spelling = this.getSpelling();
+    const spelling = CXString.initFromCursorSpelling(this.cursor);
     defer spelling.deinit();
     std.log.warn("[{s}] {s} => {s}", .{ kind_name.toString(), spelling.toString(), std.mem.span(ppp) });
 }
@@ -44,10 +44,6 @@ pub fn debugPrint(this: @This()) void {
 pub fn isFromMainFile(this: @This()) bool {
     const loc = c.clang_getCursorLocation(this.cursor);
     return c.clang_Location_isFromMainFile(loc) != 0;
-}
-
-pub fn getSpelling(this: @This()) CXString {
-    return CXString.initFromCursorSpelling(this.cursor);
 }
 
 pub fn getDisplay(this: @This()) []const u8 {

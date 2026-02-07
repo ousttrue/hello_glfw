@@ -148,18 +148,21 @@ pub const FunctionType = struct {
     };
 
     name: CXString,
+    mangling: CXString,
     ret_type: Type,
     params: []const Param,
 
     pub fn create(
         allocator: std.mem.Allocator,
         name: CXString,
+        mangling: CXString,
         ret_type: Type,
         params: []const Param,
     ) !*@This() {
         const this = try allocator.create(@This());
         this.* = .{
             .name = name,
+            .mangling = mangling,
             .ret_type = ret_type,
             .params = params,
         };
@@ -249,7 +252,7 @@ pub const Type = union(enum) {
                 break :blk .{
                     .container = try ContainerType.create(
                         allocator,
-                        cursor.getSpelling(),
+                        CXString.initFromCursorSpelling(cursor.cursor),
                         fields,
                     ),
                 };
@@ -270,7 +273,7 @@ pub const Type = union(enum) {
                 break :blk .{
                     .int_enum = try EnumType.create(
                         allocator,
-                        cursor.getSpelling(),
+                        CXString.initFromCursorSpelling(cursor.cursor),
                         values,
                     ),
                 };
@@ -280,7 +283,7 @@ pub const Type = union(enum) {
             c.CXCursor_TypedefDecl => .{
                 .typedef = try TypedefType.create(
                     allocator,
-                    cursor.getSpelling(),
+                    CXString.initFromCursorSpelling(cursor.cursor),
                     try createFromType(allocator, c.clang_getTypedefDeclUnderlyingType(cursor.cursor)),
                 ),
             },
@@ -288,7 +291,8 @@ pub const Type = union(enum) {
             c.CXCursor_FunctionDecl => .{
                 .function = try FunctionType.create(
                     allocator,
-                    cursor.getSpelling(),
+                    CXString.initFromCursorSpelling(cursor.cursor),
+                    CXString.initFromMangling(cursor.cursor),
                     try createFromType(allocator, c.clang_getCursorResultType(cursor.cursor)),
                     &.{},
                 ),

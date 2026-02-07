@@ -41,7 +41,7 @@ pub fn deinit(this: *@This()) void {
 
 pub fn getCursorByName(this: @This(), name: []const u8) ?CXCursor {
     for (this.cursors.items) |item| {
-        const spelling = item.getSpelling();
+        const spelling = CXString.initFromCursorSpelling(item.cursor);
         defer spelling.deinit();
         if (std.mem.eql(u8, spelling.toString(), name)) {
             return item;

@@ -124,6 +124,7 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
         },
         .function => |function| {
             const name = function.name.toString();
+            const mangling = function.mangling.toString();
             if (std.mem.startsWith(u8, name, "operator ")) {
                 return;
             }
@@ -133,7 +134,7 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             }
             e.value_ptr.* = 1;
 
-            try writer.print("pub extern fn {s}(", .{name});
+            try writer.print("extern fn {s}(", .{mangling});
             for (function.params, 0..) |param, i| {
                 if (i > 0) {
                     try writer.writeAll(", ");
@@ -143,7 +144,8 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             }
             try writer.writeAll(") ");
             try _allocPrintDeref(writer, function.ret_type);
-            try writer.writeAll(";");
+            try writer.writeAll(";\n");
+            try writer.print("pub const {s} = {s};", .{ name, mangling });
         },
         .named => {
             unreachable;

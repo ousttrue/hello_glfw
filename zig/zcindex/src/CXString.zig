@@ -23,6 +23,10 @@ pub fn initFromTypeSpelling(cx_type: c.CXType) @This() {
     return init(c.clang_getTypeSpelling(cx_type));
 }
 
+pub fn initFromMangling(cursor: c.CXCursor) @This() {
+    return init(c.clang_Cursor_getMangling(cursor));
+}
+
 pub fn deinit(this: @This()) void {
     _ = this;
     // c.clang_disposeString(this.str);
