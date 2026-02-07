@@ -7,10 +7,37 @@ pub const ValueType = union(enum) {
     void,
     bool,
     u8,
+    u16,
+    u32,
+    u64,
     i8,
+    i16,
     i32,
+    i64,
     f32,
     f64,
+};
+
+pub const TypedefType = struct {
+    name: []const u8,
+    type_ref: Type,
+
+    pub fn create(
+        allocator: std.mem.Allocator,
+        name: []const u8,
+        type_ref: Type,
+    ) !*@This() {
+        const this = try allocator.create(@This());
+        this.* = .{
+            .name = name,
+            .type_ref = type_ref,
+        };
+        return this;
+    }
+
+    pub fn destroy(this: *const @This(), allocator: std.mem.Allocator) void {
+        allocator.destroy(this);
+    }
 };
 
 pub const PointerType = struct {
@@ -127,6 +154,7 @@ pub const EnumType = struct {
 
 pub const Type = union(enum) {
     value: ValueType,
+    typedef: *TypedefType,
     pointer: *PointerType,
     container: *ContainerType,
     function: *FunctionType,
@@ -135,13 +163,33 @@ pub const Type = union(enum) {
 
     pub fn createFromCursor(allocator: std.mem.Allocator, cursor: CXCursor) !?@This() {
         switch (cursor.cursor.kind) {
+            c.CXCursor_StructDecl => {
+                return .{
+                    .container = try ContainerType.create(
+                        allocator,
+                        cursor.getSpelling(),
+                        &.{},
+                    ),
+                };
+            },
+            c.CXCursor_TypedefDecl => {
+                return .{
+                    .typedef = try TypedefType.create(
+                        allocator,
+                        cursor.getSpelling(),
+                        try createFromType(allocator, c.clang_getTypedefDeclUnderlyingType(cursor.cursor)),
+                    ),
+                };
+                // node.node_type = "typedef"
+                // local t = types.get_underlying_type(cursor)
+                // node.type = t
+            },
             c.CXCursor_FunctionDecl => {
-                const ret_type = try createFromType(allocator, c.clang_getCursorResultType(cursor.cursor));
                 return .{
                     .function = try FunctionType.create(
                         allocator,
                         cursor.getSpelling(),
-                        ret_type,
+                        try createFromType(allocator, c.clang_getCursorResultType(cursor.cursor)),
                         &.{},
                     ),
                 };
@@ -149,8 +197,6 @@ pub const Type = union(enum) {
             c.CXCursor_MacroDefinition,
             c.CXCursor_MacroExpansion,
             c.CXCursor_InclusionDirective,
-            c.CXCursor_TypedefDecl,
-            c.CXCursor_StructDecl,
             c.CXCursor_EnumDecl,
             c.CXCursor_FunctionTemplate,
             c.CXCursor_ClassTemplate,
@@ -174,8 +220,14 @@ pub const Type = union(enum) {
         return switch (cx_type.kind) {
             c.CXType_Void => @This(){ .value = .void },
             c.CXType_Bool => @This(){ .value = .bool },
-            c.CXType_Char_S => @This(){ .value = .i8 },
+            c.CXType_Char_S, c.CXType_SChar => @This(){ .value = .i8 },
+            c.CXType_Short => @This(){ .value = .i16 },
             c.CXType_Int => @This(){ .value = .i32 },
+            c.CXType_LongLong => @This(){ .value = .i64 },
+            c.CXType_UChar => @This(){ .value = .u8 },
+            c.CXType_UShort => @This(){ .value = .u16 },
+            c.CXType_UInt => @This(){ .value = .u32 },
+            c.CXType_ULongLong => @This(){ .value = .u64 },
             c.CXType_Float => @This(){ .value = .f32 },
             c.CXType_Double => @This(){ .value = .f64 },
             c.CXType_Pointer, c.CXType_LValueReference => blk: {
@@ -186,6 +238,18 @@ pub const Type = union(enum) {
                 };
                 break :blk @This(){
                     .pointer = ptr,
+                };
+            },
+            c.CXType_FunctionProto => blk: {
+                // const ptr = try allocator.create(PointerType);
+                // ptr.* = .{
+                //     .type_ref = .{ .value = .void },
+                // };
+                // break :blk @This(){
+                //     .pointer = ptr,
+                // };
+                break :blk .{
+                    .value = .void
                 };
             },
             c.CXType_Elaborated => blk: {
@@ -212,6 +276,9 @@ pub const Type = union(enum) {
             .value => {},
             .pointer => |pointer| {
                 pointer.destroy(allocator);
+            },
+            .typedef => |typedef| {
+                typedef.destroy(allocator);
             },
             .container => |container| {
                 container.destroy(allocator);

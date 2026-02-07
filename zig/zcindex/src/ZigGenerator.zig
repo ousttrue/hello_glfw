@@ -29,14 +29,26 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
         .pointer => |p| {
             try _allocPrintDeref(writer, p.type_ref);
         },
+        .typedef => |typedef| {
+            try writer.print("pub const {s} = ", .{typedef.name});
+            try _allocPrintDeref(writer, typedef.type_ref);
+            try writer.writeAll(";");
+        },
         .container => |container| {
-            try writer.print("pub const {s} = struct {{\n", .{container.name});
-            for (container.fields) |field| {
-                try writer.print("    {s}: ", .{field.name});
-                try _allocPrintDeref(writer, field.type_ref);
-                try writer.writeAll(",\n");
+            const e = try this.usedMap.getOrPut(container.name);
+            if (e.found_existing) {
+                return;
             }
-            try writer.writeAll("};");
+            e.value_ptr.* = 1;
+
+            try writer.print("pub const {s} = opaque{{}};", .{container.name});
+            // try writer.print("pub const {s} = struct {{\n", .{container.name});
+            // for (container.fields) |field| {
+            //     try writer.print("    {s}: ", .{field.name});
+            //     try _allocPrintDeref(writer, field.type_ref);
+            //     try writer.writeAll(",\n");
+            // }
+            // try writer.writeAll("};");
         },
         .function => |function| {
             if (std.mem.startsWith(u8, function.name, "operator ")) {
@@ -60,9 +72,8 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             try _allocPrintDeref(writer, function.ret_type);
             try writer.writeAll(";");
         },
-        else => {
-            return error.not_impl;
-        },
+        .int_enum => {},
+        .named => {},
     }
 }
 
@@ -79,8 +90,12 @@ fn _allocPrintDeref(writer: *std.Io.Writer, t: cx_declaration.Type) !void {
             try writeValue(writer, v);
         },
         .pointer => |p| {
-            try writer.writeAll("[*c]");
-            try _allocPrintDeref(writer, p.type_ref);
+            if (std.meta.eql(p.type_ref, cx_declaration.Type{ .value = .void })) {
+                try writer.writeAll("?*anyopaque");
+            } else {
+                try writer.writeAll("?*");
+                try _allocPrintDeref(writer, p.type_ref);
+            }
         },
         .container => |container| {
             // only name
@@ -100,27 +115,21 @@ fn _allocPrintDeref(writer: *std.Io.Writer, t: cx_declaration.Type) !void {
 
 fn writeValue(writer: *std.Io.Writer, v: cx_declaration.ValueType) !void {
     switch (v) {
-        .void => {
-            try writer.writeAll("void");
-        },
-        .bool => {
-            try writer.writeAll("bool");
-        },
-        .u8 => {
-            try writer.writeAll("u8");
-        },
-        .i8 => {
-            try writer.writeAll("i8");
-        },
-        .i32 => {
-            try writer.writeAll("i32");
-        },
-        .f32 => {
-            try writer.writeAll("f32");
-        },
-        .f64 => {
-            try writer.writeAll("f64");
-        },
+        .void => try writer.writeAll("void"),
+        .bool => try writer.writeAll("bool"),
+        //
+        .u8 => try writer.writeAll("u8"),
+        .u16 => try writer.writeAll("u16"),
+        .u32 => try writer.writeAll("u32"),
+        .u64 => try writer.writeAll("u64"),
+        //
+        .i8 => try writer.writeAll("i8"),
+        .i16 => try writer.writeAll("i16"),
+        .i32 => try writer.writeAll("i32"),
+        .i64 => try writer.writeAll("i64"),
+        //
+        .f32 => try writer.writeAll("f32"),
+        .f64 => try writer.writeAll("f64"),
     }
 }
 
