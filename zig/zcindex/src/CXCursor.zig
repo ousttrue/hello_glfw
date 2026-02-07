@@ -1,6 +1,6 @@
 const std = @import("std");
 const c = @import("cindex");
-const cxcursor_kind = @import("cxcursor_kind.zig");
+const CString = @import("CXString.zig");
 const cx_declaration = @import("cx_declaration.zig");
 
 parent: c.CXCursor,
@@ -38,7 +38,9 @@ pub fn debugPrint(this: @This()) void {
     const pp = c.clang_getCursorPrettyPrinted(this.cursor, null);
     defer c.clang_disposeString(pp);
     const ppp = c.clang_getCString(pp);
-    std.log.warn("[{s}] {s} => {s}", .{ this.getKindName(), this.getSpelling(), std.mem.span(ppp) });
+    const kind_name = CString.initFromCursorKind(this.cursor);
+    defer kind_name.deinit();
+    std.log.warn("[{s}] {s} => {s}", .{ kind_name.toString(), this.getSpelling(), std.mem.span(ppp) });
 }
 
 pub fn isFromMainFile(this: @This()) bool {
@@ -59,19 +61,5 @@ pub fn getDisplay(this: @This()) []const u8 {
         return std.mem.span(p);
     } else {
         return "";
-    }
-}
-
-pub fn getKindName(this: @This()) []const u8 {
-    if (cxcursor_kind.toName(this.cursor.kind)) |str| {
-        const prefix = "CXCursor_";
-        if (std.mem.startsWith(u8, str, prefix)) {
-            return str[prefix.len..];
-        } else {
-            return str;
-        }
-    } else {
-        std.log.err("__UNKNOWN__ cursor kind: {}", .{this.cursor.kind});
-        return "__UNKNOWN__";
     }
 }
