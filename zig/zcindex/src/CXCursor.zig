@@ -1,12 +1,11 @@
 const std = @import("std");
 const c = @import("cindex");
-const CString = @import("CXString.zig");
+const CXString = @import("CXString.zig");
 const cx_declaration = @import("cx_declaration.zig");
 
 parent: c.CXCursor,
 cursor: c.CXCursor,
 children: std.ArrayList(c.CXCursor) = .{},
-spelling: c.CXString,
 display: c.CXString,
 filename: c.CXString,
 
@@ -14,7 +13,6 @@ pub fn init(cursor: c.CXCursor, parent: c.CXCursor) @This() {
     var this = @This(){
         .parent = parent,
         .cursor = cursor,
-        .spelling = c.clang_getCursorSpelling(cursor),
         .display = c.clang_getCursorDisplayName(cursor),
         .filename = undefined,
     };
@@ -27,10 +25,8 @@ pub fn init(cursor: c.CXCursor, parent: c.CXCursor) @This() {
 }
 
 pub fn deinit(this: *@This()) void {
-    c.clang_disposeString(this.spelling);
     c.clang_disposeString(this.display);
     c.clang_disposeString(this.filename);
-
     // this.children.deinit(allocator);
 }
 
@@ -38,9 +34,11 @@ pub fn debugPrint(this: @This()) void {
     const pp = c.clang_getCursorPrettyPrinted(this.cursor, null);
     defer c.clang_disposeString(pp);
     const ppp = c.clang_getCString(pp);
-    const kind_name = CString.initFromCursorKind(this.cursor);
+    const kind_name = CXString.initFromCursorKind(this.cursor);
     defer kind_name.deinit();
-    std.log.warn("[{s}] {s} => {s}", .{ kind_name.toString(), this.getSpelling(), std.mem.span(ppp) });
+    const spelling = this.getSpelling();
+    defer spelling.deinit();
+    std.log.warn("[{s}] {s} => {s}", .{ kind_name.toString(), spelling.toString(), std.mem.span(ppp) });
 }
 
 pub fn isFromMainFile(this: @This()) bool {
@@ -48,12 +46,8 @@ pub fn isFromMainFile(this: @This()) bool {
     return c.clang_Location_isFromMainFile(loc) != 0;
 }
 
-pub fn getSpelling(this: @This()) []const u8 {
-    if (c.clang_getCString(this.spelling)) |p| {
-        return std.mem.span(p);
-    } else {
-        return "";
-    }
+pub fn getSpelling(this: @This()) CXString {
+    return CXString.initFromCursorSpelling(this.cursor);
 }
 
 pub fn getDisplay(this: @This()) []const u8 {

@@ -19,12 +19,12 @@ pub const ValueType = union(enum) {
 };
 
 pub const TypedefType = struct {
-    name: []const u8,
+    name: CXString,
     type_ref: Type,
 
     pub fn create(
         allocator: std.mem.Allocator,
-        name: []const u8,
+        name: CXString,
         type_ref: Type,
     ) !*@This() {
         const this = try allocator.create(@This());
@@ -36,6 +36,8 @@ pub const TypedefType = struct {
     }
 
     pub fn destroy(this: *const @This(), allocator: std.mem.Allocator) void {
+        this.name.deinit();
+        this.type_ref.destroy(allocator);
         allocator.destroy(this);
     }
 };
@@ -89,12 +91,12 @@ pub const ContainerType = struct {
         type_ref: Type,
     };
 
-    name: []const u8,
+    name: CXString,
     fields: []const Field,
 
     pub fn create(
         allocator: std.mem.Allocator,
-        name: []const u8,
+        name: CXString,
         fields: []const Field,
     ) !*@This() {
         const this = try allocator.create(@This());
@@ -111,6 +113,7 @@ pub const ContainerType = struct {
             field.type_ref.destroy(allocator);
         }
         allocator.free(this.fields);
+        this.name.deinit();
         allocator.destroy(this);
     }
 
@@ -144,13 +147,13 @@ pub const FunctionType = struct {
         type_ref: Type,
     };
 
-    name: []const u8,
+    name: CXString,
     ret_type: Type,
     params: []const Param,
 
     pub fn create(
         allocator: std.mem.Allocator,
-        name: []const u8,
+        name: CXString,
         ret_type: Type,
         params: []const Param,
     ) !*@This() {
@@ -168,6 +171,7 @@ pub const FunctionType = struct {
         for (this.params) |*param| {
             param.type_ref.destroy(allocator);
         }
+        this.name.deinit();
         allocator.destroy(this);
     }
 };
@@ -178,12 +182,12 @@ pub const EnumType = struct {
         value: i64,
     };
 
-    name: []const u8,
+    name: CXString,
     values: []const Value,
 
     pub fn create(
         allocator: std.mem.Allocator,
-        name: []const u8,
+        name: CXString,
         values: []const Value,
     ) !*@This() {
         const this = try allocator.create(@This());
@@ -199,6 +203,7 @@ pub const EnumType = struct {
             value.name.deinit();
         }
         allocator.free(this.values);
+        this.name.deinit();
         allocator.destroy(this);
     }
 
@@ -234,7 +239,7 @@ pub const Type = union(enum) {
     container: *ContainerType,
     function: *FunctionType,
     int_enum: *EnumType,
-    named: []const u8,
+    named: CXString,
 
     pub fn createFromCursor(allocator: std.mem.Allocator, cursor: CXCursor) !?@This() {
         return switch (cursor.cursor.kind) {
@@ -332,7 +337,7 @@ pub const Type = union(enum) {
                 int_enum.destroy(allocator);
             },
             .named => |name| {
-                allocator.free(name);
+                name.deinit();
             },
         }
     }
@@ -388,12 +393,9 @@ fn createFromType(allocator: std.mem.Allocator, cx_type: c.CXType) !Type {
         },
         c.CXType_Elaborated => blk: {
             // struct
-            const spelling = c.clang_getTypeSpelling(cx_type);
-            defer c.clang_disposeString(spelling);
-            const str = c.clang_getCString(spelling);
-            const slice = std.mem.span(str);
+            const spelling = CXString.initFromTypeSpelling(cx_type);
             break :blk .{
-                .named = try allocator.dupe(u8, slice),
+                .named = spelling,
             };
         },
         else => {

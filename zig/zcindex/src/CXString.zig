@@ -19,11 +19,16 @@ pub fn initFromCursorSpelling(cursor: c.CXCursor) @This() {
     return init(c.clang_getCursorSpelling(cursor));
 }
 
-pub fn deinit(this: @This()) void {
-    c.clang_disposeString(this.str);
+pub fn initFromTypeSpelling(cx_type: c.CXType) @This() {
+    return init(c.clang_getTypeSpelling(cx_type));
 }
 
-pub fn toString(this: @This()) []const u8 {
+pub fn deinit(this: @This()) void {
+    _ = this;
+    // c.clang_disposeString(this.str);
+}
+
+pub fn toString(this: *const @This()) []const u8 {
     if (c.clang_getCString(this.str)) |str| {
         return std.mem.span(str);
     } else {

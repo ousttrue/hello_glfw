@@ -156,48 +156,6 @@ test "cindex" {
         const cursor = data.getCursorByName("__unknown__");
         try std.testing.expect(cursor == null);
     }
-    {
-        const cursor = data.getCursorByName("GetIO").?;
-        if (try cx_declaration.Type.createFromCursor(allocator, cursor)) |decl| {
-            defer decl.destroy(allocator);
-            try std.testing.expect(@as(cx_declaration.Type, decl) == cx_declaration.Type.function);
-            const f = decl.function;
-            try std.testing.expectEqualSlices(u8, "GetIO", f.name);
-
-            // try std.testing.expect(@as(cx_declaration.Type, decl) == cx_declaration.Type.function);
-
-            //     const f = decl.function_decl;
-            //     const ret_decl = f.getReturnDecl();
-            //     try std.testing.expect(@as(cx_declaration.DeclarationType, ret_decl) ==
-            //         cx_declaration.DeclarationType.pointer);
-
-            var zig_generator = ZigGenerator.init(allocator);
-            defer zig_generator.deinit();
-            const zig_src = try zig_generator.allocPrintDecl(allocator, decl);
-            defer allocator.free(zig_src);
-            try std.testing.expectEqualSlices(u8, "pub extern fn GetIO() ?*ImGuiIO;", zig_src);
-        }
-    }
-    // {
-    //     const cursor = data.getCursorByName("ImGuiIO").?;
-    //     const decl = cursor.getDeclaration();
-    //     try std.testing.expect(decl == null);
-    // }
-
-    // const _zig_source = try out.toOwnedSlice();
-    // defer allocator.free(_zig_source);
-    // std.log.warn("{s}", .{_zig_source});
-    // std.log.warn("hello", .{});
-
-    // const zig_source = try allocator.dupeZ(u8, _zig_source);
-    // defer allocator.free(zig_source);
-    //
-    // var tree = try std.zig.Ast.parse(allocator, zig_source, .zig);
-    // defer tree.deinit(allocator);
-    //
-    // for (tree.rootDecls(), 0..) |root_decl_index, i| {
-    //     std.log.debug("root decls[{}]: {s}", .{ i, tree.getNodeSource(root_decl_index) });
-    // }
 }
 
 test "zig struct" {

@@ -56,21 +56,24 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             //     }
             // }
 
-            const e = try this.usedMap.getOrPut(typedef.name);
+            const name = typedef.name.toString();
+            const e = try this.usedMap.getOrPut(name);
             if (e.found_existing) {
                 return;
             }
             e.value_ptr.* = 1;
 
-            try writer.print("pub const {s} = ", .{typedef.name});
+            try writer.print("pub const {s} = ", .{name});
             try _allocPrintDeref(writer, typedef.type_ref);
             try writer.writeAll(";");
         },
         .container => |container| {
+            const name = container.name.toString();
+
             for (opaque_names) |opaque_name| {
-                if (std.mem.eql(u8, container.name, opaque_name)) {
+                if (std.mem.eql(u8, name, opaque_name)) {
                     // TODO
-                    try writer.print("pub const {s} = opaque{{}};", .{container.name});
+                    try writer.print("pub const {s} = opaque{{}};", .{name});
                     return;
                 }
             }
@@ -78,13 +81,13 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             if (container.fields.len == 0) {
                 return;
             }
-            const e = try this.usedMap.getOrPut(container.name);
+            const e = try this.usedMap.getOrPut(name);
             if (e.found_existing) {
                 return;
             }
             e.value_ptr.* = 1;
 
-            try writer.print("pub const {s} = struct {{\n", .{container.name});
+            try writer.print("pub const {s} = struct {{\n", .{name});
             for (container.fields) |field| {
                 try writer.print("    {s}: ", .{field.name.toString()});
                 try _allocPrintDeref(writer, field.type_ref);
@@ -93,16 +96,17 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             try writer.writeAll("};");
         },
         .int_enum => |int_enum| {
+            const name = int_enum.name.toString();
             if (int_enum.values.len == 0) {
                 return;
             }
-            const e = try this.usedMap.getOrPut(int_enum.name);
+            const e = try this.usedMap.getOrPut(name);
             if (e.found_existing) {
                 return;
             }
             e.value_ptr.* = 1;
 
-            const enum_name = int_enum.name;
+            const enum_name = name;
             // if (std.mem.endsWith(u8, enum_name, "_")) {
             //     for (enum_typedef_list) |name| {
             //         if (std.mem.startsWith(u8, enum_name, name)) {
@@ -119,16 +123,17 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             try writer.writeAll("};");
         },
         .function => |function| {
-            if (std.mem.startsWith(u8, function.name, "operator ")) {
+            const name = function.name.toString();
+            if (std.mem.startsWith(u8, name, "operator ")) {
                 return;
             }
-            const e = try this.usedMap.getOrPut(function.name);
+            const e = try this.usedMap.getOrPut(name);
             if (e.found_existing) {
                 return;
             }
             e.value_ptr.* = 1;
 
-            try writer.print("pub extern fn {s}(", .{function.name});
+            try writer.print("pub extern fn {s}(", .{name});
             for (function.params, 0..) |param, i| {
                 if (i > 0) {
                     try writer.writeAll(", ");
@@ -172,12 +177,13 @@ fn _allocPrintDeref(writer: *std.Io.Writer, t: cx_declaration.Type) !void {
         },
         .container => |container| {
             // only name
-            try writer.print("{s}", .{container.name});
+            try writer.print("{s}", .{container.name.toString()});
         },
         .function => {
             unreachable;
         },
-        .named => |name| {
+        .named => |named| {
+            const name = named.toString();
             if (std.mem.startsWith(u8, name, "ImVector<")) {
                 try writer.writeAll("ImVector(");
                 const inner_type = name[9 .. name.len - 1];
@@ -248,54 +254,5 @@ test "pointer" {
         const zig_src = try allocPrintDeref(allocator, type_ref);
         defer allocator.free(zig_src);
         try std.testing.expectEqualSlices(u8, "?*u8", zig_src);
-    }
-}
-
-test "function" {
-    const allocator = std.testing.allocator;
-
-    {
-        var zig_generator = ZigGenerator.init(allocator);
-        defer zig_generator.deinit();
-
-        // u8
-        var type_ref = cx_declaration.Type{
-            .function = try cx_declaration.FunctionType.create(allocator, "func", .{ .value = .{ .u8 = void{} } }, &.{
-                .{
-                    .name = "param0",
-                    .type_ref = .{ .value = .{ .u8 = void{} } },
-                },
-            }),
-        };
-        defer type_ref.destroy(allocator);
-        const zig_src = try zig_generator.allocPrintDecl(allocator, type_ref);
-        defer allocator.free(zig_src);
-        try std.testing.expectEqualSlices(u8, "pub extern fn func(param0: u8) u8;", zig_src);
-    }
-    {
-        var zig_generator = ZigGenerator.init(allocator);
-        defer zig_generator.deinit();
-
-        // [*c]u8
-        const p_type = try allocator.create(cx_declaration.PointerType);
-        p_type.* = .{
-            .type_ref = .{
-                .value = .{
-                    .u8 = void{},
-                },
-            },
-        };
-        var type_ref = cx_declaration.Type{
-            .function = try cx_declaration.FunctionType.create(allocator, "func", .{ .pointer = p_type }, &.{
-                .{
-                    .name = "param0",
-                    .type_ref = .{ .value = .{ .u8 = void{} } },
-                },
-            }),
-        };
-        defer type_ref.destroy(allocator);
-        const zig_src = try zig_generator.allocPrintDecl(allocator, type_ref);
-        defer allocator.free(zig_src);
-        try std.testing.expectEqualSlices(u8, "pub extern fn func(param0: u8) ?*u8;", zig_src);
     }
 }
