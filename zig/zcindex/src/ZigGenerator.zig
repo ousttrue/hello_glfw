@@ -2,6 +2,18 @@ const std = @import("std");
 const cx_declaration = @import("cx_declaration.zig");
 const ZigGenerator = @This();
 
+const opaque_names = [_][]const u8{
+    "ImGuiContext",
+    "ImDrawListSharedData",
+    "ImFontLoader",
+    "ImFontAtlasBuilder",
+};
+
+const c_to_zig = std.StaticStringMap([]const u8).initComptime(&.{
+    .{ "char", "u8" },
+    .{ "float", "f32" },
+});
+
 usedMap: std.StringHashMap(u32),
 
 pub fn init(allocator: std.mem.Allocator) @This() {
@@ -29,26 +41,46 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
         .pointer => |p| {
             try _allocPrintDeref(writer, p.type_ref);
         },
+        .array => |a| {
+            try _allocPrintDeref(writer, a.type_ref);
+        },
         .typedef => |typedef| {
+            const e = try this.usedMap.getOrPut(typedef.name);
+            if (e.found_existing) {
+                return;
+            }
+            e.value_ptr.* = 1;
+
             try writer.print("pub const {s} = ", .{typedef.name});
             try _allocPrintDeref(writer, typedef.type_ref);
             try writer.writeAll(";");
         },
         .container => |container| {
+            for (opaque_names) |opaque_name| {
+                if (std.mem.eql(u8, container.name, opaque_name)) {
+                    // TODO
+                    try writer.print("pub const {s} = opaque{{}};", .{container.name});
+                    return;
+                }
+            }
+
+            if (container.fields.len == 0) {
+                return;
+            }
             const e = try this.usedMap.getOrPut(container.name);
             if (e.found_existing) {
                 return;
             }
             e.value_ptr.* = 1;
 
-            try writer.print("pub const {s} = opaque{{}};", .{container.name});
-            // try writer.print("pub const {s} = struct {{\n", .{container.name});
-            // for (container.fields) |field| {
-            //     try writer.print("    {s}: ", .{field.name});
-            //     try _allocPrintDeref(writer, field.type_ref);
-            //     try writer.writeAll(",\n");
-            // }
-            // try writer.writeAll("};");
+            // try writer.print("pub const {s} = opaque{{}};", .{container.name});
+            try writer.print("pub const {s} = struct {{\n", .{container.name});
+            for (container.fields) |field| {
+                try writer.print("    {s}: ", .{field.name});
+                try _allocPrintDeref(writer, field.type_ref);
+                try writer.writeAll(",\n");
+            }
+            try writer.writeAll("};");
         },
         .function => |function| {
             if (std.mem.startsWith(u8, function.name, "operator ")) {
@@ -97,6 +129,10 @@ fn _allocPrintDeref(writer: *std.Io.Writer, t: cx_declaration.Type) !void {
                 try _allocPrintDeref(writer, p.type_ref);
             }
         },
+        .array => |a| {
+            try writer.print("[{}]", .{a.len});
+            try _allocPrintDeref(writer, a.type_ref);
+        },
         .container => |container| {
             // only name
             try writer.print("{s}", .{container.name});
@@ -105,7 +141,24 @@ fn _allocPrintDeref(writer: *std.Io.Writer, t: cx_declaration.Type) !void {
             unreachable;
         },
         .named => |name| {
-            try writer.writeAll(name);
+            if (std.mem.startsWith(u8, name, "ImVector<")) {
+                try writer.writeAll("ImVector(");
+                const inner_type = name[9 .. name.len - 1];
+                if (std.mem.endsWith(u8, inner_type, "*")) {
+                    // pointer
+                    try writer.writeAll("*anyopaque");
+                } else if (c_to_zig.get(inner_type)) |zig_type| {
+                    // char etc...
+                    try writer.writeAll(zig_type);
+                } else {
+                    // ImWchar etc...
+                    try writer.writeAll(inner_type);
+                }
+
+                try writer.writeAll(")");
+            } else {
+                try writer.writeAll(name);
+            }
         },
         else => {
             return error.not_impl;
@@ -157,7 +210,7 @@ test "pointer" {
         defer type_ref.destroy(allocator);
         const zig_src = try allocPrintDeref(allocator, type_ref);
         defer allocator.free(zig_src);
-        try std.testing.expectEqualSlices(u8, "[*c]u8", zig_src);
+        try std.testing.expectEqualSlices(u8, "?*u8", zig_src);
     }
 }
 
@@ -231,7 +284,7 @@ test "function" {
         defer type_ref.destroy(allocator);
         const zig_src = try zig_generator.allocPrintDecl(allocator, type_ref);
         defer allocator.free(zig_src);
-        try std.testing.expectEqualSlices(u8, "pub extern fn func(param0: u8) [*c]u8;", zig_src);
+        try std.testing.expectEqualSlices(u8, "pub extern fn func(param0: u8) ?*u8;", zig_src);
     }
     {
         var zig_generator = ZigGenerator.init(allocator);
@@ -296,7 +349,7 @@ test "function" {
         const zig_src = try zig_generator.allocPrintDecl(allocator, type_ref);
         defer allocator.free(zig_src);
         try std.testing.expectEqualSlices(u8,
-            \\pub extern fn func(param0: u8) [*c]Hoge;
+            \\pub extern fn func(param0: u8) ?*Hoge;
         , zig_src);
     }
 }

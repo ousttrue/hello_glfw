@@ -90,7 +90,7 @@ pub fn main() void {
     //     IMGUI_CHECKVERSION();
 
     // ImGui::CreateContext();
-    const io = imgui.GetIO();
+    const io = imgui.GetIO().?;
     io.ConfigFlags |= imgui.ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
     //     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
     //

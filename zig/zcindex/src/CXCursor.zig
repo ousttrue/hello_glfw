@@ -3,13 +3,16 @@ const c = @import("cindex");
 const cxcursor_kind = @import("cxcursor_kind.zig");
 const cx_declaration = @import("cx_declaration.zig");
 
+parent: c.CXCursor,
 cursor: c.CXCursor,
+children: std.ArrayList(c.CXCursor) = .{},
 spelling: c.CXString,
 display: c.CXString,
 filename: c.CXString,
 
-pub fn init(cursor: c.CXCursor) @This() {
+pub fn init(cursor: c.CXCursor, parent: c.CXCursor) @This() {
     var this = @This(){
+        .parent = parent,
         .cursor = cursor,
         .spelling = c.clang_getCursorSpelling(cursor),
         .display = c.clang_getCursorDisplayName(cursor),
@@ -27,6 +30,8 @@ pub fn deinit(this: *@This()) void {
     c.clang_disposeString(this.spelling);
     c.clang_disposeString(this.display);
     c.clang_disposeString(this.filename);
+
+    // this.children.deinit(allocator);
 }
 
 pub fn debugPrint(this: @This()) void {

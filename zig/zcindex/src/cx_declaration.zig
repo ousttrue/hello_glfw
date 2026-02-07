@@ -60,6 +60,29 @@ pub const PointerType = struct {
     }
 };
 
+pub const ArrayType = struct {
+    type_ref: Type,
+    len: usize,
+
+    pub fn create(
+        allocator: std.mem.Allocator,
+        type_ref: Type,
+        len: usize,
+    ) !*@This() {
+        const this = try allocator.create(@This());
+        this.* = .{
+            .type_ref = type_ref,
+            .len = len,
+        };
+        return this;
+    }
+
+    pub fn destroy(this: *const @This(), allocator: std.mem.Allocator) void {
+        this.type_ref.destroy(allocator);
+        allocator.destroy(this);
+    }
+};
+
 pub const ContainerType = struct {
     pub const Field = struct {
         name: []const u8,
@@ -74,16 +97,24 @@ pub const ContainerType = struct {
         name: []const u8,
         fields: []const Field,
     ) !*@This() {
+        var new_fields = try allocator.alloc(Field, fields.len);
+        for (fields, 0..) |field, i| {
+            new_fields[i] = .{
+                .name = try allocator.dupe(u8, field.name),
+                .type_ref = field.type_ref,
+            };
+        }
         const this = try allocator.create(@This());
         this.* = .{
             .name = name,
-            .fields = try allocator.dupe(Field, fields),
+            .fields = new_fields,
         };
         return this;
     }
 
     pub fn destroy(this: *const @This(), allocator: std.mem.Allocator) void {
         for (this.fields) |*field| {
+            allocator.free(field.name);
             field.type_ref.destroy(allocator);
         }
         allocator.free(this.fields);
@@ -156,62 +187,94 @@ pub const Type = union(enum) {
     value: ValueType,
     typedef: *TypedefType,
     pointer: *PointerType,
+    array: *ArrayType,
     container: *ContainerType,
     function: *FunctionType,
     int_enum: *EnumType,
     named: []const u8,
 
     pub fn createFromCursor(allocator: std.mem.Allocator, cursor: CXCursor) !?@This() {
-        switch (cursor.cursor.kind) {
-            c.CXCursor_StructDecl => {
-                return .{
+        return switch (cursor.cursor.kind) {
+            c.CXCursor_StructDecl => blk: {
+                var field_index: usize = 0;
+                for (cursor.children.items) |child| {
+                    if (child.kind == c.CXCursor_FieldDecl) {
+                        field_index += 1;
+                    }
+                }
+                const fields = try allocator.alloc(ContainerType.Field, field_index);
+                defer allocator.free(fields);
+                field_index = 0;
+                for (cursor.children.items) |child| {
+                    if (child.kind == c.CXCursor_FieldDecl) {
+                        const spelling = CXString.initFromCursorSpelling(child);
+                        defer spelling.deinit();
+                        fields[field_index] = .{
+                            .name = try allocator.dupe(u8, spelling.toString()),
+                            .type_ref = try createFromType(allocator, c.clang_getCursorType(child)),
+                        };
+                        field_index += 1;
+                    }
+                }
+                defer {
+                    for (fields) |field| {
+                        allocator.free(field.name);
+                    }
+                }
+                break :blk .{
                     .container = try ContainerType.create(
                         allocator,
                         cursor.getSpelling(),
-                        &.{},
+                        fields,
                     ),
                 };
             },
-            c.CXCursor_TypedefDecl => {
-                return .{
+            c.CXCursor_FieldDecl => null,
+            c.CXCursor_TypedefDecl => .{
+                .typedef = try TypedefType.create(
+                    allocator,
+                    cursor.getSpelling(),
+                    try createFromType(allocator, c.clang_getTypedefDeclUnderlyingType(cursor.cursor)),
+                ),
+            },
+            c.CXCursor_EnumDecl => blk: {
+                // TODO
+                break :blk .{
                     .typedef = try TypedefType.create(
                         allocator,
                         cursor.getSpelling(),
-                        try createFromType(allocator, c.clang_getTypedefDeclUnderlyingType(cursor.cursor)),
+                        .{ .value = .i32 },
                     ),
                 };
-                // node.node_type = "typedef"
-                // local t = types.get_underlying_type(cursor)
-                // node.type = t
             },
-            c.CXCursor_FunctionDecl => {
-                return .{
-                    .function = try FunctionType.create(
-                        allocator,
-                        cursor.getSpelling(),
-                        try createFromType(allocator, c.clang_getCursorResultType(cursor.cursor)),
-                        &.{},
-                    ),
-                };
+            c.CXCursor_FunctionDecl => .{
+                .function = try FunctionType.create(
+                    allocator,
+                    cursor.getSpelling(),
+                    try createFromType(allocator, c.clang_getCursorResultType(cursor.cursor)),
+                    &.{},
+                ),
             },
             c.CXCursor_MacroDefinition,
             c.CXCursor_MacroExpansion,
             c.CXCursor_InclusionDirective,
-            c.CXCursor_EnumDecl,
             c.CXCursor_FunctionTemplate,
             c.CXCursor_ClassTemplate,
             c.CXCursor_CXXMethod,
+            c.CXCursor_Constructor,
+            c.CXCursor_Destructor,
+            c.CXCursor_ConversionFunction,
+            c.CXCursor_VarDecl,
+            c.CXCursor_UnionDecl,
             c.CXCursor_Namespace,
-            => {
-                return null;
-            },
+            => null,
             else => {
                 const str = CXString.initFromCursorKind(cursor.cursor);
                 defer str.deinit();
-                std.log.warn("cursor.type [{s}]", .{str.toString()});
+                std.log.warn("cursor.type [{s} = {}]", .{ str.toString(), cursor.cursor.kind });
                 @panic("UNKNOWN");
             },
-        }
+        };
     }
 
     // https://clang.llvm.org/docs/LibClang.html
@@ -240,6 +303,18 @@ pub const Type = union(enum) {
                     .pointer = ptr,
                 };
             },
+            c.CXType_ConstantArray => blk: {
+                const array_type = c.clang_getArrayElementType(cx_type);
+                const len: usize = @intCast(c.clang_getArraySize(cx_type));
+                const array = try allocator.create(ArrayType);
+                array.* = .{
+                    .type_ref = try createFromType(allocator, array_type),
+                    .len = len,
+                };
+                break :blk @This(){
+                    .array = array,
+                };
+            },
             c.CXType_FunctionProto => blk: {
                 // const ptr = try allocator.create(PointerType);
                 // ptr.* = .{
@@ -248,9 +323,7 @@ pub const Type = union(enum) {
                 // break :blk @This(){
                 //     .pointer = ptr,
                 // };
-                break :blk .{
-                    .value = .void
-                };
+                break :blk .{ .value = .void };
             },
             c.CXType_Elaborated => blk: {
                 // struct
@@ -276,6 +349,9 @@ pub const Type = union(enum) {
             .value => {},
             .pointer => |pointer| {
                 pointer.destroy(allocator);
+            },
+            .array => |array| {
+                array.destroy(allocator);
             },
             .typedef => |typedef| {
                 typedef.destroy(allocator);

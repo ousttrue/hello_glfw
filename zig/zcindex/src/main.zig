@@ -44,6 +44,18 @@ pub fn main() !void {
         &data,
     );
 
+    try writer.interface.writeAll(
+        \\pub fn ImVector(T: type) type {
+        \\    return struct {
+        \\        Size: i32,
+        \\        Capacity: i32,
+        \\        Data: *T,
+        \\    };
+        \\}
+        \\
+        \\
+    );
+
     var g = ZigGenerator.init(allocator);
     defer g.deinit();
     for (data.cursors.items) |cursor| {
@@ -51,43 +63,68 @@ pub fn main() !void {
             defer decl.destroy(allocator);
             const zig_src = try g.allocPrintDecl(allocator, decl);
             defer allocator.free(zig_src);
-
-            try writer.interface.print("{s}\n", .{zig_src});
-            // const zig_src = try zig_generator.allocPrintDecl(allocator, decl);
-            // defer allocator.free(zig_src);
-            //
+            if (zig_src.len > 0) {
+                try writer.interface.print("{s}\n", .{zig_src});
+            }
         }
     }
 }
 
-const T = struct {
-    export fn debug_visitor(
-        _cursor: c.CXCursor,
-        _parent: c.CXCursor,
-        client_data: c.CXClientData,
-    ) c.CXChildVisitResult {
-        _ = client_data;
+export fn debug_visitor(
+    _cursor: c.CXCursor,
+    _parent: c.CXCursor,
+    client_data: c.CXClientData,
+) c.CXChildVisitResult {
+    _ = client_data;
 
-        var cursor = CXCursor.init(_cursor);
-        defer cursor.deinit();
+    var cursor = CXCursor.init(_cursor, _parent);
+    defer cursor.deinit();
 
-        var parent = CXCursor.init(_parent);
-        defer parent.deinit();
+    // var parent = CXCursor.init(_parent, .{});
+    // defer parent.deinit();
 
-        const loc = cursor.getLocation();
-        std.log.warn("{s}:{}:{} => {s}", .{ loc.path, loc.line, loc.col, cursor.getDisplay() });
+    cursor.debugPrint();
+    // std.log.warn("{s}:{}:{} => {s}", .{ loc.path, loc.line, loc.col, cursor.getDisplay() });
 
-        // if (c.clang_getCString(cursor.filename)) |p| {
-        //     const cursor_path = std.mem.span(p);
-        //     std.log.warn("=> {s}: {s}", .{ cursor_path, cursor.getDisplay() });
-        // } else {
-        //     std.log.warn("no file: {s}", .{cursor.getDisplay()});
-        // }
+    // if (c.clang_getCString(cursor.filename)) |p| {
+    //     const cursor_path = std.mem.span(p);
+    //     std.log.warn("=> {s}: {s}", .{ cursor_path, cursor.getDisplay() });
+    // } else {
+    //     std.log.warn("no file: {s}", .{cursor.getDisplay()});
+    // }
 
-        // std.log.warn("{s}", .{cursor.getDisplay()});
-        return c.CXVisit_Continue;
-    }
-};
+    // std.log.warn("{s}", .{cursor.getDisplay()});
+    return c.CXVisit_Continue;
+}
+
+// test "debug visitor" {
+//     const allocator = std.testing.allocator;
+//     const contents =
+//         \\struct Hoge{
+//         \\  int a;
+//         \\};
+//     ;
+//     var cindex_parser = try CIndexParser.fromContents(allocator, contents);
+//     defer cindex_parser.deinit();
+//
+//     const _tu = try cindex_parser.parse();
+//     try std.testing.expect(_tu != null);
+//     const tu = _tu orelse @panic("parse");
+//     defer c.clang_disposeTranslationUnit(tu);
+//
+//     var data = ClientData.init(
+//         allocator,
+//         cindex_parser.entry_point,
+//         cindex_parser.include_dirs.items,
+//     );
+//     defer data.deinit();
+//
+//     _ = c.clang_visitChildren(
+//         c.clang_getTranslationUnitCursor(tu),
+//         debug_visitor,
+//         &data,
+//     );
+// }
 
 test {
     _ = cx_declaration;
@@ -150,7 +187,7 @@ test "cindex" {
             defer zig_generator.deinit();
             const zig_src = try zig_generator.allocPrintDecl(allocator, decl);
             defer allocator.free(zig_src);
-            try std.testing.expectEqualSlices(u8, "pub extern fn GetIO() [*c]ImGuiIO;", zig_src);
+            try std.testing.expectEqualSlices(u8, "pub extern fn GetIO() ?*ImGuiIO;", zig_src);
         }
     }
     // {
@@ -173,4 +210,46 @@ test "cindex" {
     // for (tree.rootDecls(), 0..) |root_decl_index, i| {
     //     std.log.debug("root decls[{}]: {s}", .{ i, tree.getNodeSource(root_decl_index) });
     // }
+}
+
+test "zig struct" {
+    const allocator = std.testing.allocator;
+    const contents =
+        \\struct Hoge{
+        \\  int a;
+        \\};
+    ;
+    var cindex_parser = try CIndexParser.fromContents(allocator, contents);
+    defer cindex_parser.deinit();
+
+    const _tu = try cindex_parser.parse();
+    try std.testing.expect(_tu != null);
+    const tu = _tu orelse @panic("parse");
+    defer c.clang_disposeTranslationUnit(tu);
+
+    var data = ClientData.init(
+        allocator,
+        cindex_parser.entry_point,
+        cindex_parser.include_dirs.items,
+    );
+    defer data.deinit();
+    _ = c.clang_visitChildren(
+        c.clang_getTranslationUnitCursor(tu),
+        ClientData.visitor,
+        &data,
+    );
+
+    const cursor = data.getCursorByName("Hoge").?;
+    const decl = (try cx_declaration.Type.createFromCursor(allocator, cursor)).?;
+    defer decl.destroy(allocator);
+
+    var zig_generator = ZigGenerator.init(allocator);
+    defer zig_generator.deinit();
+    const zig_src = try zig_generator.allocPrintDecl(allocator, decl);
+    defer allocator.free(zig_src);
+    try std.testing.expectEqualSlices(u8,
+        \\pub const Hoge = struct {
+        \\    a: i32,
+        \\};
+    , zig_src);
 }

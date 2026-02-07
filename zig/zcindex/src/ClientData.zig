@@ -33,6 +33,7 @@ pub fn init(
 
 pub fn deinit(this: *@This()) void {
     for (this.cursors.items) |*item| {
+        item.children.deinit(this.allocator);
         item.deinit();
     }
     this.cursors.deinit(this.allocator);
@@ -52,21 +53,25 @@ fn onVisit(
     _cursor: c.CXCursor,
     _parent: c.CXCursor,
 ) !c.CXChildVisitResult {
-    const cursor = CXCursor.init(_cursor);
-
-    var parent = CXCursor.init(_parent);
-    defer parent.deinit();
-
+    var cursor = CXCursor.init(_cursor, _parent);
     if (!this.isAcceptable(cursor)) {
         // skip
+        defer cursor.deinit();
         return c.CXVisit_Continue;
     }
     try this.cursors.append(this.allocator, cursor);
 
-    // cursor.debugPrint();
+    for (this.cursors.items) |*item| {
+        if (c.clang_equalCursors(item.cursor, _parent) != 0) {
+            // parent found
+            try item.children.append(this.allocator, _cursor);
+            break;
+        }
+    }
 
     return switch (cursor.cursor.kind) {
         c.CXCursor_Namespace => c.CXChildVisit_Recurse,
+        c.CXCursor_StructDecl => c.CXChildVisit_Recurse,
         else => c.CXChildVisit_Continue,
     };
 }
@@ -142,24 +147,3 @@ const DeclFunction = struct {
         this.name.deinit();
     }
 };
-
-// const Decl = union(enum) {
-//     none,
-//     function: DeclFunction,
-//
-//     fn init(cursor: c.CXCursor) @This() {
-//         return switch (cursor.kind) {
-//             c.CXCursor_FunctionDecl => .{ .function = DeclFunction.init(cursor) },
-//             else => .{ .none = void{} },
-//         };
-//     }
-//
-//     fn deinit(this: *@This()) void {
-//         switch (this.*) {
-//             .function => |*f| {
-//                 f.deinit();
-//             },
-//             .none => {},
-//         }
-//     }
-// };
