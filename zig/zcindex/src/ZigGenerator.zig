@@ -14,10 +14,6 @@ const c_to_zig = std.StaticStringMap([]const u8).initComptime(&.{
     .{ "float", "f32" },
 });
 
-// const enum_typedef_list = [_][]const u8{
-//     "ImGuiConfigFlags", // typedef int ImGuiConfigFlags -> enum ImGuiConfigFlags_
-// };
-
 usedMap: std.StringHashMap(u32),
 
 pub fn init(allocator: std.mem.Allocator) @This() {
@@ -49,13 +45,6 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             try _allocPrintDeref(writer, a.type_ref);
         },
         .typedef => |typedef| {
-            // for (enum_typedef_list) |name| {
-            //     if (std.mem.eql(u8, typedef.name, name)) {
-            //         // skip
-            //         return;
-            //     }
-            // }
-
             const name = typedef.name.toString();
             const e = try this.usedMap.getOrPut(name);
             if (e.found_existing) {
@@ -72,7 +61,6 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
 
             for (opaque_names) |opaque_name| {
                 if (std.mem.eql(u8, name, opaque_name)) {
-                    // TODO
                     try writer.print("pub const {s} = opaque{{}};", .{name});
                     return;
                 }
@@ -93,7 +81,11 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
                 try _allocPrintDeref(writer, field.type_ref);
                 try writer.writeAll(",\n");
             }
-            try writer.writeAll("};");
+            try writer.writeAll("};\n");
+
+            // Test
+            // try writer.print("test \"{s}\" {{\n", .{name});
+            // try writer.writeAll("}");
         },
         .int_enum => |int_enum| {
             const name = int_enum.name.toString();
@@ -107,15 +99,6 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             e.value_ptr.* = 1;
 
             const enum_name = name;
-            // if (std.mem.endsWith(u8, enum_name, "_")) {
-            //     for (enum_typedef_list) |name| {
-            //         if (std.mem.startsWith(u8, enum_name, name)) {
-            //             enum_name = name;
-            //             break;
-            //         }
-            //     }
-            // }
-
             try writer.print("pub const {s} = enum(i32) {{\n", .{enum_name});
             for (int_enum.values) |value| {
                 try writer.print("    {s} = {},\n", .{ value.name.toString(), value.value });

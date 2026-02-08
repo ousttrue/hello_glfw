@@ -89,20 +89,24 @@ pub const ContainerType = struct {
     pub const Field = struct {
         name: CXString,
         type_ref: Type,
+        offset: usize,
     };
 
     name: CXString,
     fields: []const Field,
+    size: usize,
 
     pub fn create(
         allocator: std.mem.Allocator,
         name: CXString,
         fields: []const Field,
+        size: usize,
     ) !*@This() {
         const this = try allocator.create(@This());
         this.* = .{
             .name = name,
             .fields = try allocator.dupe(Field, fields),
+            .size = size,
         };
         return this;
     }
@@ -117,7 +121,7 @@ pub const ContainerType = struct {
         allocator.destroy(this);
     }
 
-    pub fn getFields(allocator: std.mem.Allocator, children: []c.CXCursor) ![]Field {
+    pub fn getFields(allocator: std.mem.Allocator, children: []c.CXCursor, parent_name: []const u8) ![]Field {
         var index: usize = 0;
         for (children) |child| {
             if (child.kind == c.CXCursor_FieldDecl) {
@@ -129,9 +133,26 @@ pub const ContainerType = struct {
         index = 0;
         for (children) |child| {
             if (child.kind == c.CXCursor_FieldDecl) {
+                const name = CXString.initFromCursorSpelling(child);
+                const offset: usize = switch (c.clang_Cursor_getOffsetOfField(child)) {
+                    c.CXTypeLayoutError_Invalid => blk: {
+                        std.log.warn("{s}.{s}: the cursor semantic parent is not a record field declaration", .{
+                            parent_name, name.toString(),
+                        });
+                        break :blk 0;
+                    },
+                    c.CXTypeLayoutError_Incomplete => @panic("the field's type declaration is an incomplete type"),
+                    c.CXTypeLayoutError_Dependent => @panic("the field's type declaration is a dependent type"),
+                    c.CXTypeLayoutError_InvalidFieldName => @panic("the field's name S is not found"),
+                    else => |s| @intCast(s),
+                };
+                // if (offset < 0) {
+                //     @panic("offset < 0");
+                // }
                 fields[index] = .{
-                    .name = CXString.initFromCursorSpelling(child),
+                    .name = name,
                     .type_ref = try createFromType(allocator, c.clang_getCursorType(child)),
+                    .offset = @intCast(offset),
                 };
                 index += 1;
             }
@@ -247,13 +268,24 @@ pub const Type = union(enum) {
     pub fn createFromCursor(allocator: std.mem.Allocator, cursor: CXCursor) !?@This() {
         return switch (cursor.cursor.kind) {
             c.CXCursor_StructDecl => blk: {
-                const fields = try ContainerType.getFields(allocator, cursor.children.items);
+                const name = CXString.initFromCursorSpelling(cursor.cursor);
+                const fields = try ContainerType.getFields(allocator, cursor.children.items, name.toString());
                 defer allocator.free(fields);
+                const size: usize = switch (c.clang_Type_getSizeOf(c.clang_getCursorType(cursor.cursor))) {
+                    c.CXTypeLayoutError_Invalid => @panic("Type is of kind CXType_Invalid."),
+                    c.CXTypeLayoutError_Incomplete => 0, //@panic("The type is an incomplete Type."),
+                    c.CXTypeLayoutError_Dependent => @panic("The type is a dependent Type."),
+                    c.CXTypeLayoutError_NotConstantSize => @panic("The type is not a constant size type."),
+                    c.CXTypeLayoutError_InvalidFieldName => @panic("The Field name is not valid for this record."),
+                    c.CXTypeLayoutError_Undeduced => @panic("The type is undeduced."),
+                    else => |s| @intCast(s),
+                };
                 break :blk .{
                     .container = try ContainerType.create(
                         allocator,
-                        CXString.initFromCursorSpelling(cursor.cursor),
+                        name,
                         fields,
+                        @intCast(size),
                     ),
                 };
             },
