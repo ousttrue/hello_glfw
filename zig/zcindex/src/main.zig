@@ -8,24 +8,74 @@ const ClientData = @import("ClientData.zig");
 const CXCursor = @import("CXCursor.zig");
 const ZigGenerator = @import("ZigGenerator.zig");
 const cx_declaration = @import("cx_declaration.zig");
+const DebugPrinter = @import("DebugPrinter.zig");
 
+//
+// exe {zig|debug} entroy_point
+//
 pub fn main() !void {
-    if (std.os.argv.len < 2) {
-        return error.no_commandline_arg;
-    }
-
-    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
-    defer _ = gpa.detectLeaks();
-    const allocator = gpa.allocator();
-
     var writer_buf: [1024]u8 = undefined;
     var writer = std.fs.File.stdout().writer(&writer_buf);
     defer writer.interface.flush() catch @panic("OOM");
 
-    var cindex_parser = if (std.os.argv.len == 2)
-        try CIndexParser.fromSingleHeader(allocator, std.os.argv[1])
+    if (std.os.argv.len >= 3) {
+        const cmd: []const u8 = std.mem.span(std.os.argv[1]);
+        if (std.mem.eql(u8, cmd, "zig")) {
+            try main_zig(std.os.argv[2..], &writer.interface);
+        } else if (std.mem.eql(u8, cmd, "debug")) {
+            try main_debug(std.os.argv[2..], &writer.interface);
+        }
+        return;
+    }
+
+    try usage(&writer.interface);
+}
+
+fn usage(writer: *std.Io.Writer) !void {
+    try writer.print(
+        \\ usage: {s} {{zig|debug}} c_headers....
+        \\     ex. zcindex zig imgui.h
+        \\
+    , .{std.mem.span(std.os.argv[0])});
+}
+
+fn main_debug(argv: []const [*:0]const u8, writer: *std.Io.Writer) !void {
+    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
+    defer _ = gpa.detectLeaks();
+    const allocator = gpa.allocator();
+
+    var cindex_parser = if (argv.len == 1)
+        try CIndexParser.fromSingleHeader(allocator, argv[0])
     else
-        try CIndexParser.fromMultiHeadr(allocator, std.os.argv[1..]);
+        try CIndexParser.fromMultiHeadr(allocator, argv);
+    defer cindex_parser.deinit();
+
+    const tu = try cindex_parser.parse();
+    defer c.clang_disposeTranslationUnit(tu);
+
+    var printer = DebugPrinter.init(
+        writer,
+        cindex_parser.entry_point,
+        cindex_parser.include_dirs.items,
+    );
+    defer printer.deinit();
+
+    _ = c.clang_visitChildren(
+        c.clang_getTranslationUnitCursor(tu),
+        DebugPrinter.DebugPrinter_visitor,
+        &printer,
+    );
+}
+
+fn main_zig(argv: []const [*:0]const u8, writer: *std.Io.Writer) !void {
+    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
+    defer _ = gpa.detectLeaks();
+    const allocator = gpa.allocator();
+
+    var cindex_parser = if (argv.len == 1)
+        try CIndexParser.fromSingleHeader(allocator, argv[0])
+    else
+        try CIndexParser.fromMultiHeadr(allocator, argv);
     defer cindex_parser.deinit();
 
     const tu = try cindex_parser.parse();
@@ -40,11 +90,11 @@ pub fn main() !void {
 
     _ = c.clang_visitChildren(
         c.clang_getTranslationUnitCursor(tu),
-        ClientData.visitor,
+        ClientData.ClientData_visitor,
         &data,
     );
 
-    try writer.interface.writeAll(
+    try writer.writeAll(
         \\pub fn ImVector(T: type) type {
         \\    return struct {
         \\        Size: i32,
@@ -64,7 +114,7 @@ pub fn main() !void {
             const zig_src = try g.allocPrintDecl(allocator, decl);
             defer allocator.free(zig_src);
             if (zig_src.len > 0) {
-                try writer.interface.print("{s}\n", .{zig_src});
+                try writer.print("{s}\n", .{zig_src});
             }
         }
     }
@@ -76,47 +126,6 @@ test {
     std.testing.refAllDecls(@This());
     // std.testing.refAllDeclsRecursive(@import("root"));
 }
-
-export fn debug_visitor(
-    _cursor: c.CXCursor,
-    _parent: c.CXCursor,
-    client_data: c.CXClientData,
-) c.CXChildVisitResult {
-    _ = client_data;
-
-    var cursor = CXCursor.init(_cursor, _parent);
-    switch (cursor.cursor.kind) {
-        c.CXCursor_MacroDefinition => {},
-        else => {
-            cursor.debugPrint();
-        },
-    }
-
-    return c.CXChildVisit_Recurse;
-}
-
-// test "debug visitor" {
-//     const allocator = std.testing.allocator;
-//     const contents =
-//         \\enum Hoge {
-//         \\  HOGE_X = 1,
-//         \\  HOGE_Y = 2,
-//         \\};
-//     ;
-//     var cindex_parser = try CIndexParser.fromContents(allocator, contents);
-//     defer cindex_parser.deinit();
-//
-//     const _tu = try cindex_parser.parse();
-//     try std.testing.expect(_tu != null);
-//     const tu = _tu orelse @panic("parse");
-//     defer c.clang_disposeTranslationUnit(tu);
-//
-//     _ = c.clang_visitChildren(
-//         c.clang_getTranslationUnitCursor(tu),
-//         debug_visitor,
-//         null,
-//     );
-// }
 
 test "cindex" {
     const allocator = std.testing.allocator;
@@ -145,7 +154,7 @@ test "cindex" {
     _ = c.clang_visitChildren(
         c.clang_getTranslationUnitCursor(tu),
         // T.debug_visitor,
-        ClientData.visitor,
+        ClientData.ClientData_visitor,
         &data,
     );
 
@@ -179,7 +188,7 @@ test "zig struct" {
     defer data.deinit();
     _ = c.clang_visitChildren(
         c.clang_getTranslationUnitCursor(tu),
-        ClientData.visitor,
+        ClientData.ClientData_visitor,
         &data,
     );
 
@@ -236,7 +245,7 @@ test "zig enum" {
     defer data.deinit();
     _ = c.clang_visitChildren(
         c.clang_getTranslationUnitCursor(tu),
-        ClientData.visitor,
+        ClientData.ClientData_visitor,
         &data,
     );
 

@@ -36,6 +36,17 @@ fn init(allocator: std.mem.Allocator) !@This() {
     return this;
 }
 
+pub fn deinit(this: *@This()) void {
+    if (this.unsaved_file) |unsaved_file| {
+        this.allocator.free(unsaved_file.Contents[0..unsaved_file.Length]);
+    }
+    this.command_line.deinit(this.allocator);
+    for (this.include_dirs.items) |include_dir| {
+        this.allocator.free(include_dir);
+    }
+    this.include_dirs.deinit(this.allocator);
+}
+
 fn allocFullpathDir(allocator: std.mem.Allocator, src: [*:0]const u8) ![]const u8 {
     var realpath_buf: [1024]u8 = undefined;
     const realpath = try std.fs.cwd().realpathZ(src, &realpath_buf);
@@ -110,24 +121,13 @@ pub fn fromContents(
     return this;
 }
 
-pub fn deinit(this: *@This()) void {
-    if (this.unsaved_file) |unsaved_file| {
-        this.allocator.free(unsaved_file.Contents[0..unsaved_file.Length]);
-    }
-    this.command_line.deinit(this.allocator);
-    for (this.include_dirs.items) |include_dir| {
-        this.allocator.free(include_dir);
-    }
-    this.include_dirs.deinit(this.allocator);
-}
-
 pub fn parse(this: *@This()) !c.CXTranslationUnit {
     const index = c.clang_createIndex(0, 0);
 
-    // std.log.warn("entry_point => {s}", .{this.entry_point});
-    // for (this.command_line.items, 0..) |command, i| {
-    //     std.log.warn("[{:2}] {s}", .{ i, command });
-    // }
+    std.log.warn("entry_point => {s}", .{this.entry_point});
+    for (this.command_line.items, 0..) |command, i| {
+        std.log.warn("[{:2}] {s}", .{ i, command });
+    }
 
     var tu: c.CXTranslationUnit = undefined;
     const result = c.clang_parseTranslationUnit2(index,

@@ -4,20 +4,9 @@ const CXCursor = @import("CXCursor.zig");
 const CXString = @import("CXString.zig");
 
 allocator: std.mem.Allocator,
-include_dirs: []const []const u8,
 entry_point: []const u8,
+include_dirs: []const []const u8,
 cursors: std.ArrayList(CXCursor) = .{},
-
-pub export fn visitor(
-    cursor: c.CXCursor,
-    parent: c.CXCursor,
-    client_data: c.CXClientData,
-) c.CXChildVisitResult {
-    const data: *@This() = @ptrCast(@alignCast(client_data));
-    return data.onVisit(cursor, parent) catch {
-        return c.CXChildVisit_Break;
-    };
-}
 
 pub fn init(
     allocator: std.mem.Allocator,
@@ -37,6 +26,18 @@ pub fn deinit(this: *@This()) void {
     }
     this.cursors.deinit(this.allocator);
 }
+
+pub export fn ClientData_visitor(
+    cursor: c.CXCursor,
+    parent: c.CXCursor,
+    client_data: c.CXClientData,
+) c.CXChildVisitResult {
+    const data: *@This() = @ptrCast(@alignCast(client_data));
+    return data.onVisit(cursor, parent) catch {
+        return c.CXChildVisit_Break;
+    };
+}
+
 
 pub fn getCursorByName(this: @This(), name: []const u8) ?CXCursor {
     for (this.cursors.items) |item| {

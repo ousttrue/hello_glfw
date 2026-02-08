@@ -15,6 +15,10 @@ pub fn initFromTypeKind(cx_type: c.CXType) @This() {
     return init(c.clang_getTypeKindSpelling(cx_type.kind));
 }
 
+pub fn initFromCursorDisplayName(cursor: c.CXCursor) @This() {
+    return init(c.clang_getCursorPrettyPrinted(cursor, null));
+}
+
 pub fn initFromCursorSpelling(cursor: c.CXCursor) @This() {
     return init(c.clang_getCursorSpelling(cursor));
 }
