@@ -89,7 +89,7 @@ pub fn main() void {
     // Setup Dear ImGui context
     //     IMGUI_CHECKVERSION();
 
-    // ImGui::CreateContext();
+    _ = imgui.CreateContext();
     const io = imgui.GetIO().?;
     _ = io;
     // io.ConfigFlags = io.ConfigFlags | imgui.ImGuiConfigFlags_.ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls

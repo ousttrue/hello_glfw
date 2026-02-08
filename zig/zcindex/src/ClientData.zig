@@ -34,7 +34,6 @@ pub fn init(
 pub fn deinit(this: *@This()) void {
     for (this.cursors.items) |*item| {
         item.children.deinit(this.allocator);
-        item.deinit();
     }
     this.cursors.deinit(this.allocator);
 }
@@ -55,10 +54,9 @@ fn onVisit(
     _cursor: c.CXCursor,
     _parent: c.CXCursor,
 ) !c.CXChildVisitResult {
-    var cursor = CXCursor.init(_cursor, _parent);
+    const cursor = CXCursor.init(_cursor, _parent);
     if (!this.isAcceptable(cursor)) {
         // skip
-        defer cursor.deinit();
         return c.CXVisit_Continue;
     }
     try this.cursors.append(this.allocator, cursor);
@@ -84,8 +82,12 @@ fn isAcceptable(this: @This(), cursor: CXCursor) bool {
         return true;
     }
 
-    if (c.clang_getCString(cursor.filename)) |p| {
-        const cursor_path = std.mem.span(p);
+    const filename = CXString.initFromCursorFilepath(cursor.cursor);
+    defer filename.deinit();
+
+    // if (c.clang_getCString(cursor.filename)) |p| {
+    {
+        const cursor_path = filename.toString();
         // std.log.debug("{s}, {s}", .{ this.entry_point, cursor_path });
         if (std.mem.eql(u8, cursor_path, this.entry_point)) {
             return true;

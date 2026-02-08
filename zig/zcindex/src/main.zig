@@ -85,15 +85,12 @@ export fn debug_visitor(
     _ = client_data;
 
     var cursor = CXCursor.init(_cursor, _parent);
-    defer cursor.deinit();
-
     switch (cursor.cursor.kind) {
         c.CXCursor_MacroDefinition => {},
         else => {
             cursor.debugPrint();
         },
     }
-    // std.log.warn("{s}:{}:{} => {s}", .{ loc.path, loc.line, loc.col, cursor.getDisplay() });
 
     return c.CXChildVisit_Recurse;
 }
@@ -164,6 +161,7 @@ test "zig struct" {
         \\struct Hoge{
         \\  int a;
         \\};
+        \\
     ;
     var cindex_parser = try CIndexParser.fromContents(allocator, contents);
     defer cindex_parser.deinit();
@@ -197,10 +195,11 @@ test "zig struct" {
         \\pub const Hoge = struct {
         \\    a: i32,
         \\};
+        \\
     , zig_src);
 }
 
-// const ENUM = enum(c_int) 
+// const ENUM = enum(c_int)
 // {
 //     A = 1,
 //     B = 3,
