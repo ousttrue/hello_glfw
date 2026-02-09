@@ -98,13 +98,24 @@ pub fn build(b: *std.Build) !void {
         .file = b.path("zig-out/src/size_offset.cpp"),
     });
 
+    const glfw_dep = b.dependency("glfw", .{});
+    const glfw_lib = try build_glfw.build(b, target, optimize, glfw_dep);
+    const glad_lib = try build_glad.build(b, target, optimize, glfw_dep);
+    imgui_mod.addImport("glfw", glfw_lib.root_module);
+
     // if (b.option(bool, "samples", "samples") orelse false) {
     for (samples) |sample| {
-        const sample_compiled = try build_sample(b, target, optimize, sample, sokol_dep, imgui_dep);
+        const exe = try build_sample(b, target, optimize, sample, sokol_dep, imgui_dep);
+
+        exe.linkLibrary(glfw_lib);
+        exe.root_module.addImport("glfw", glfw_lib.root_module);
+        exe.linkLibrary(glad_lib);
+        exe.root_module.addImport("glad", glad_lib.root_module);
+
         // if (sample.use_imgui) {
-        sample_compiled.root_module.addImport("imgui", imgui_mod);
+        exe.root_module.addImport("imgui", imgui_mod);
         for (installs) |install| {
-            sample_compiled.step.dependOn(&install.step);
+            exe.step.dependOn(&install.step);
         }
         // }
     }
@@ -144,16 +155,6 @@ fn build_sample(
     });
     b.installArtifact(exe);
 
-    const glfw_dep = b.dependency("glfw", .{});
-
-    const glfw_lib = try build_glfw.build(b, target, optimize, glfw_dep);
-    exe.linkLibrary(glfw_lib);
-    exe.root_module.addImport("glfw", glfw_lib.root_module);
-
-    const glad_lib = try build_glad.build(b, target, optimize, glfw_dep);
-    exe.linkLibrary(glad_lib);
-    exe.root_module.addImport("glad", glad_lib.root_module);
-
     // if (sample.use_sokol) {
     //     const t = b.addTranslateC(.{
     //         .target = target,
@@ -181,13 +182,16 @@ fn build_sample(
                 "imgui_draw.cpp",
                 "imgui_tables.cpp",
                 "imgui_widgets.cpp",
+                //
+                "backends/imgui_impl_glfw.cpp",
+                "backends/imgui_impl_opengl3.cpp",
             },
-            .flags = &.{},
+            .flags = &.{
+            },
         });
         // exe.linkSystemLibrary("X11");
 
-        //
-        // exe.addIncludePath(imgui_dep.path(""));
+        exe.addIncludePath(imgui_dep.path(""));
         // exe.addCSourceFiles(.{
         //     .files = &.{
         //         "imgui_helper/imgui_without_mangling.cpp",

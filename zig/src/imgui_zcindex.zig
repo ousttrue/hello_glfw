@@ -41,7 +41,7 @@ export fn glfw_error_callback(err: c_int, description: [*c]const u8) void {
 }
 
 // Main code
-pub fn main() void {
+pub fn main() !void {
     _ = glfw.glfwSetErrorCallback(glfw_error_callback);
     if (glfw.glfwInit() == 0) {
         @panic("glfwInit");
@@ -81,13 +81,13 @@ pub fn main() void {
     // Valid on GLFW 3.3+ only
     const main_scale = imgui.ImGui_ImplGlfw_GetContentScaleForMonitor(glfw.glfwGetPrimaryMonitor());
     const window = glfw.glfwCreateWindow(
-        (1280 * main_scale),
-        (800 * main_scale),
+        @intFromFloat(1280 * main_scale),
+        @intFromFloat(800 * main_scale),
         "Dear ImGui GLFW+OpenGL3 example",
         null,
         null,
     ) orelse {
-        return 1;
+        return error.glfwCreateWindow;
     };
     glfw.glfwMakeContextCurrent(window);
     glfw.glfwSwapInterval(1); // Enable vsync
@@ -95,13 +95,13 @@ pub fn main() void {
     // Setup Dear ImGui context
     // IMGUI_CHECKVERSION();
 
-    _ = imgui.CreateContext();
+    _ = imgui.CreateContext(null);
     const io = imgui.GetIO().?;
     io.ConfigFlags |= imgui.ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
     io.ConfigFlags |= imgui.ImGuiConfigFlags_NavEnableGamepad; // Enable Gamepad Controls
 
     // Setup Dear ImGui style
-    imgui.StyleColorsDark();
+    imgui.StyleColorsDark(null);
     //ImGui::StyleColorsLight();
 
     // Setup scaling
@@ -110,7 +110,7 @@ pub fn main() void {
     //     style.FontScaleDpi = main_scale;        // Set initial font scale. (using io.ConfigDpiScaleFonts=true makes this unnecessary. We leave both here for documentation purpose)
 
     // Setup Platform/Renderer backends
-    imgui.ImGui_ImplGlfw_InitForOpenGL(window, true);
+    _ = imgui.ImGui_ImplGlfw_InitForOpenGL(window, true);
     // #ifdef __EMSCRIPTEN__
     //     ImGui_ImplGlfw_InstallEmscriptenCallbacks(window, "#canvas");
     // #endif

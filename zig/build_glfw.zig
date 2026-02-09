@@ -97,7 +97,7 @@ pub fn build(
         // wayland
         lib.addCSourceFiles(.{
             .root = glfw_dep.path("src"),
-            .files = &(srcs ++ srcs_posix ++ srcs_wayland),
+            .files = &(srcs ++ srcs_posix ++ srcs_wayland ++ srcs_x11),
             .flags = &flags_wayland,
         });
 

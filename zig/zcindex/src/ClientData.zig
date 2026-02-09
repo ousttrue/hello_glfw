@@ -74,6 +74,7 @@ fn onVisit(
         c.CXCursor_Namespace => c.CXChildVisit_Recurse,
         c.CXCursor_StructDecl => c.CXChildVisit_Recurse,
         c.CXCursor_EnumDecl => c.CXChildVisit_Recurse,
+        c.CXCursor_FunctionDecl => c.CXChildVisit_Recurse,
         else => c.CXChildVisit_Continue,
     };
 }

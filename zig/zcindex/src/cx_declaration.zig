@@ -121,8 +121,7 @@ pub const ContainerType = struct {
         allocator.destroy(this);
     }
 
-    pub fn getFields(allocator: std.mem.Allocator, children: []c.CXCursor, parent_name: []const u8) ![]Field {
-        _ = parent_name;
+    pub fn getFields(allocator: std.mem.Allocator, children: []c.CXCursor) ![]Field {
         var index: usize = 0;
         for (children) |child| {
             if (child.kind == c.CXCursor_FieldDecl) {
@@ -137,9 +136,6 @@ pub const ContainerType = struct {
                 const name = CXString.initFromCursorSpelling(child);
                 const offset: usize = switch (c.clang_Cursor_getOffsetOfField(child)) {
                     c.CXTypeLayoutError_Invalid => blk: {
-                        // std.log.warn("{s}.{s}: the cursor semantic parent is not a record field declaration", .{
-                        //     parent_name, name.toString(),
-                        // });
                         break :blk 0;
                     },
                     c.CXTypeLayoutError_Incomplete => @panic("the field's type declaration is an incomplete type"),
@@ -165,7 +161,7 @@ pub const ContainerType = struct {
 
 pub const FunctionType = struct {
     pub const Param = struct {
-        name: []const u8,
+        name: CXString,
         type_ref: Type,
     };
 
@@ -186,7 +182,7 @@ pub const FunctionType = struct {
             .name = name,
             .mangling = mangling,
             .ret_type = ret_type,
-            .params = params,
+            .params = try allocator.dupe(Param, params),
         };
         return this;
     }
@@ -194,10 +190,39 @@ pub const FunctionType = struct {
     pub fn destroy(this: *const @This(), allocator: std.mem.Allocator) void {
         this.ret_type.destroy(allocator);
         for (this.params) |*param| {
+            param.name.deinit();
             param.type_ref.destroy(allocator);
         }
         this.name.deinit();
         allocator.destroy(this);
+    }
+
+    pub fn getParams(allocator: std.mem.Allocator, children: []c.CXCursor) ![]Param {
+        var index: usize = 0;
+        for (children) |child| {
+            if (child.kind == c.CXCursor_ParmDecl) {
+                index += 1;
+            }
+        }
+        if (index == 0) {
+            return &.{};
+        }
+
+        var params = try allocator.alloc(Param, index);
+
+        index = 0;
+        for (children) |child| {
+            if (child.kind == c.CXCursor_ParmDecl) {
+                const name = CXString.initFromCursorSpelling(child);
+                params[index] = .{
+                    .name = name,
+                    .type_ref = try createFromType(allocator, c.clang_getCursorType(child)),
+                };
+                index += 1;
+            }
+        }
+
+        return params;
     }
 };
 
@@ -268,9 +293,17 @@ pub const Type = union(enum) {
 
     pub fn createFromCursor(allocator: std.mem.Allocator, cursor: CXCursor) !?@This() {
         return switch (cursor.cursor.kind) {
+            c.CXCursor_TypedefDecl => .{
+                .typedef = try TypedefType.create(
+                    allocator,
+                    CXString.initFromCursorSpelling(cursor.cursor),
+                    try createFromType(allocator, c.clang_getTypedefDeclUnderlyingType(cursor.cursor)),
+                ),
+            },
+            //
             c.CXCursor_StructDecl => blk: {
                 const name = CXString.initFromCursorSpelling(cursor.cursor);
-                const fields = try ContainerType.getFields(allocator, cursor.children.items, name.toString());
+                const fields = try ContainerType.getFields(allocator, cursor.children.items);
                 defer allocator.free(fields);
                 const size: usize = switch (c.clang_Type_getSizeOf(c.clang_getCursorType(cursor.cursor))) {
                     c.CXTypeLayoutError_Invalid => @panic("Type is of kind CXType_Invalid."),
@@ -313,23 +346,21 @@ pub const Type = union(enum) {
             },
             c.CXCursor_EnumConstantDecl => null,
             //
-            c.CXCursor_TypedefDecl => .{
-                .typedef = try TypedefType.create(
-                    allocator,
-                    CXString.initFromCursorSpelling(cursor.cursor),
-                    try createFromType(allocator, c.clang_getTypedefDeclUnderlyingType(cursor.cursor)),
-                ),
+            c.CXCursor_FunctionDecl => blk: {
+                const params = try FunctionType.getParams(allocator, cursor.children.items);
+                defer allocator.free(params);
+                break :blk .{
+                    .function = try FunctionType.create(
+                        allocator,
+                        CXString.initFromCursorSpelling(cursor.cursor),
+                        CXString.initFromMangling(cursor.cursor),
+                        try createFromType(allocator, c.clang_getCursorResultType(cursor.cursor)),
+                        params,
+                    ),
+                };
             },
+            c.CXCursor_ParmDecl => null,
             //
-            c.CXCursor_FunctionDecl => .{
-                .function = try FunctionType.create(
-                    allocator,
-                    CXString.initFromCursorSpelling(cursor.cursor),
-                    CXString.initFromMangling(cursor.cursor),
-                    try createFromType(allocator, c.clang_getCursorResultType(cursor.cursor)),
-                    &.{},
-                ),
-            },
             c.CXCursor_MacroDefinition,
             c.CXCursor_MacroExpansion,
             c.CXCursor_InclusionDirective,
@@ -342,6 +373,8 @@ pub const Type = union(enum) {
             c.CXCursor_VarDecl,
             c.CXCursor_UnionDecl,
             c.CXCursor_Namespace,
+            c.CXCursor_TypeRef,
+            c.CXCursor_UnexposedAttr,
             => null,
             else => {
                 const str = CXString.initFromCursorKind(cursor.cursor);
@@ -401,6 +434,16 @@ fn createFromType(allocator: std.mem.Allocator, cx_type: c.CXType) !Type {
             const ptr = try allocator.create(PointerType);
             ptr.* = .{
                 .type_ref = try createFromType(allocator, pointee_type),
+            };
+            break :blk Type{
+                .pointer = ptr,
+            };
+        },
+        c.CXType_IncompleteArray => blk: {
+            const array_type = c.clang_getArrayElementType(cx_type);
+            const ptr = try allocator.create(PointerType);
+            ptr.* = .{
+                .type_ref = try createFromType(allocator, array_type),
             };
             break :blk Type{
                 .pointer = ptr,

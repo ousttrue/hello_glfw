@@ -175,7 +175,7 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
                 if (i > 0) {
                     try writer.writeAll(", ");
                 }
-                try writer.print("{s}: ", .{param.name});
+                try writer.print("{s}: ", .{param.name.toString()});
                 try _allocPrintDeref(writer, param.type_ref);
             }
             try writer.writeAll(") ");

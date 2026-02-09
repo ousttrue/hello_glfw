@@ -130,6 +130,9 @@ fn main_zig(argv: []const [*:0]const u8, writer: *std.Io.Writer) !void {
 
     try writer.writeAll(
         \\const std = @import("std");
+        \\const glfw = @import("glfw");
+        \\const GLFWwindow = glfw.GLFWwindow;
+        \\const GLFWmonitor = glfw.GLFWmonitor;
         \\
         \\pub const c = @cImport({
         \\    @cInclude("size_offset.h");
