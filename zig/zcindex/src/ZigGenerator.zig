@@ -111,10 +111,20 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             //
             try writer.print(
                 \\test "{s}" {{
-                \\try std.testing.expectEqual(@sizeOf({s}), c.{s}_sizeof());
-                \\}}
                 \\
-            , .{ name, name, name });
+            , .{name});
+
+            try writer.print(
+                "try std.testing.expectEqual(@sizeOf({s}), c.{s}_sizeof());\n",
+                .{name, name},
+            );
+            for (container.fields) |field| {
+                try writer.print(
+                    "try std.testing.expectEqual(@offsetOf({s}, \"{s}\"), c.{s}_offsetof_{s}());\n",
+                    .{ name, field.name.toString(), name, field.name.toString() },
+                );
+            }
+            try writer.writeAll("}\n");
         },
         .int_enum => |int_enum| {
             const name = int_enum.name.toString();

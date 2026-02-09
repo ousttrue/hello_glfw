@@ -78,34 +78,39 @@ pub fn main() void {
     // #endif
 
     // Create window with graphics context
-    // const main_scale = imgui.ImGui_ImplGlfw_GetContentScaleForMonitor(glfw.glfwGetPrimaryMonitor()); // Valid on GLFW 3.3+ only
-    // _ = main_scale;
-    //     GLFWwindow* window = glfwCreateWindow((int)(1280 * main_scale), (int)(800 * main_scale), "Dear ImGui GLFW+OpenGL3 example", nullptr, nullptr);
-    //     if (window == nullptr)
-    //         return 1;
-    //     glfwMakeContextCurrent(window);
-    //     glfwSwapInterval(1); // Enable vsync
+    // Valid on GLFW 3.3+ only
+    const main_scale = imgui.ImGui_ImplGlfw_GetContentScaleForMonitor(glfw.glfwGetPrimaryMonitor());
+    const window = glfw.glfwCreateWindow(
+        (1280 * main_scale),
+        (800 * main_scale),
+        "Dear ImGui GLFW+OpenGL3 example",
+        null,
+        null,
+    ) orelse {
+        return 1;
+    };
+    glfw.glfwMakeContextCurrent(window);
+    glfw.glfwSwapInterval(1); // Enable vsync
 
     // Setup Dear ImGui context
-    //     IMGUI_CHECKVERSION();
+    // IMGUI_CHECKVERSION();
 
     _ = imgui.CreateContext();
     const io = imgui.GetIO().?;
-    _ = io;
-    // io.ConfigFlags = io.ConfigFlags | imgui.ImGuiConfigFlags_.ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
-    //     io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-    //
-    //     // Setup Dear ImGui style
-    //     ImGui::StyleColorsDark();
-    //     //ImGui::StyleColorsLight();
-    //
-    //     // Setup scaling
+    io.ConfigFlags |= imgui.ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
+    io.ConfigFlags |= imgui.ImGuiConfigFlags_NavEnableGamepad; // Enable Gamepad Controls
+
+    // Setup Dear ImGui style
+    imgui.StyleColorsDark();
+    //ImGui::StyleColorsLight();
+
+    // Setup scaling
     //     ImGuiStyle& style = ImGui::GetStyle();
     //     style.ScaleAllSizes(main_scale);        // Bake a fixed style scale. (until we have a solution for dynamic style scaling, changing this requires resetting Style + calling this again)
     //     style.FontScaleDpi = main_scale;        // Set initial font scale. (using io.ConfigDpiScaleFonts=true makes this unnecessary. We leave both here for documentation purpose)
-    //
-    //     // Setup Platform/Renderer backends
-    //     ImGui_ImplGlfw_InitForOpenGL(window, true);
+
+    // Setup Platform/Renderer backends
+    imgui.ImGui_ImplGlfw_InitForOpenGL(window, true);
     // #ifdef __EMSCRIPTEN__
     //     ImGui_ImplGlfw_InstallEmscriptenCallbacks(window, "#canvas");
     // #endif
