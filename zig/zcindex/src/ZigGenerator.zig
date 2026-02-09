@@ -6,7 +6,15 @@ const skip_types = [_][]const u8{
     // template ImVector
     "ImVector",
     // ImGuiTextFilter::ImGuiTextRange
+    "ImGuiTextFilter",
     "ImGuiTextRange",
+    // bitfield, union member
+    "ImFontGlyph",
+    "ImFontAtlas",
+    "ImFontBaked",
+    "ImGuiPlatformImeData",
+    "ImGuiStoragePair",
+    // "ImGuiStorage",
 };
 
 const opaque_names = [_][]const u8{
@@ -67,6 +75,11 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
         },
         .container => |container| {
             const name = container.name.toString();
+            for (skip_types) |skip| {
+                if (std.mem.eql(u8, name, skip)) {
+                    return;
+                }
+            }
 
             for (opaque_names) |opaque_name| {
                 if (std.mem.eql(u8, name, opaque_name)) {
@@ -84,7 +97,7 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             }
             e.value_ptr.* = 1;
 
-            try writer.print("pub const {s} = struct {{\n", .{name});
+            try writer.print("pub const {s} = extern struct {{\n", .{name});
             for (container.fields) |field| {
                 try writer.print("    {s}: ", .{field.name.toString()});
                 try _allocPrintDeref(writer, field.type_ref);
@@ -95,12 +108,7 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             // Test
             // try writer.print("test \"{s}\" {{\n", .{name});
             // try writer.writeAll("}");
-            // 
-            for(skip_types)|skip|{
-                if(std.mem.eql(u8, name, skip)){
-                    return;
-                }
-            }
+            //
             try writer.print(
                 \\test "{s}" {{
                 \\try std.testing.expectEqual(@sizeOf({s}), c.{s}_sizeof());

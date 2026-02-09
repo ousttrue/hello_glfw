@@ -136,12 +136,20 @@ fn main_zig(argv: []const [*:0]const u8, writer: *std.Io.Writer) !void {
         \\});
         \\
         \\pub fn ImVector(T: type) type {
-        \\    return struct {
+        \\    return extern struct {
         \\        Size: i32,
         \\        Capacity: i32,
         \\        Data: *T,
         \\    };
         \\}
+        \\
+        \\pub const ImGuiStoragePair = struct {
+        \\    key: ImGuiID,
+        \\    val_p: *anyopaque,
+        \\};
+        \\
+        \\pub const ImFontBaked = opaque{};
+        \\pub const ImFontAtlas = opaque{};
         \\
         \\
     );

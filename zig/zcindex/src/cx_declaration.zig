@@ -122,6 +122,7 @@ pub const ContainerType = struct {
     }
 
     pub fn getFields(allocator: std.mem.Allocator, children: []c.CXCursor, parent_name: []const u8) ![]Field {
+        _ = parent_name;
         var index: usize = 0;
         for (children) |child| {
             if (child.kind == c.CXCursor_FieldDecl) {
@@ -136,9 +137,9 @@ pub const ContainerType = struct {
                 const name = CXString.initFromCursorSpelling(child);
                 const offset: usize = switch (c.clang_Cursor_getOffsetOfField(child)) {
                     c.CXTypeLayoutError_Invalid => blk: {
-                        std.log.warn("{s}.{s}: the cursor semantic parent is not a record field declaration", .{
-                            parent_name, name.toString(),
-                        });
+                        // std.log.warn("{s}.{s}: the cursor semantic parent is not a record field declaration", .{
+                        //     parent_name, name.toString(),
+                        // });
                         break :blk 0;
                     },
                     c.CXTypeLayoutError_Incomplete => @panic("the field's type declaration is an incomplete type"),
