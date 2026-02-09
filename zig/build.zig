@@ -189,7 +189,7 @@ fn build_sample(
             .flags = &.{
             },
         });
-        // exe.linkSystemLibrary("X11");
+        exe.linkSystemLibrary("X11");
 
         exe.addIncludePath(imgui_dep.path(""));
         // exe.addCSourceFiles(.{

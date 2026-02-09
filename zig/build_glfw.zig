@@ -53,6 +53,7 @@ const srcs_x11 = [_][]const u8{
 
 const flags_wayland = [_][]const u8{
     "-D_GLFW_WAYLAND",
+    "-D_GLFW_X11",
 };
 
 const wayland_protocols = [_][]const u8{

@@ -14,6 +14,10 @@ const gl = @import("glad");
 const linmath = @import("linmath.zig");
 const imgui = @import("imgui");
 
+fn T(str: [:0]const u8) *i8 {
+    return @ptrCast(@constCast(str.ptr));
+}
+
 // #include "imgui.h"
 // #include "imgui_impl_glfw.h"
 // #include "imgui_impl_opengl3.h"
@@ -70,7 +74,7 @@ pub fn main() !void {
     //     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // Required on Mac
     // #else
     // GL 3.0 + GLSL 130
-    //     const char* glsl_version = "#version 130";
+    const glsl_version: [*:0]const u8 = "#version 130";
     glfw.glfwWindowHint(glfw.GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfw.glfwWindowHint(glfw.GLFW_CONTEXT_VERSION_MINOR, 0);
     //glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
@@ -89,41 +93,46 @@ pub fn main() !void {
     ) orelse {
         return error.glfwCreateWindow;
     };
+    defer glfw.glfwDestroyWindow(window);
     glfw.glfwMakeContextCurrent(window);
+    _ = gl.gladLoadGL(glfw.glfwGetProcAddress);
     glfw.glfwSwapInterval(1); // Enable vsync
 
     // Setup Dear ImGui context
     // IMGUI_CHECKVERSION();
 
     _ = imgui.CreateContext(null);
+    defer imgui.DestroyContext(null);
     const io = imgui.GetIO().?;
     io.ConfigFlags |= imgui.ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
     io.ConfigFlags |= imgui.ImGuiConfigFlags_NavEnableGamepad; // Enable Gamepad Controls
 
     // Setup Dear ImGui style
     imgui.StyleColorsDark(null);
-    //ImGui::StyleColorsLight();
+    //imgui.StyleColorsLight();
 
     // Setup scaling
-    //     ImGuiStyle& style = ImGui::GetStyle();
+    //     ImGuiStyle& style = imgui.GetStyle();
     //     style.ScaleAllSizes(main_scale);        // Bake a fixed style scale. (until we have a solution for dynamic style scaling, changing this requires resetting Style + calling this again)
     //     style.FontScaleDpi = main_scale;        // Set initial font scale. (using io.ConfigDpiScaleFonts=true makes this unnecessary. We leave both here for documentation purpose)
 
     // Setup Platform/Renderer backends
     _ = imgui.ImGui_ImplGlfw_InitForOpenGL(window, true);
+    defer imgui.ImGui_ImplGlfw_Shutdown();
     // #ifdef __EMSCRIPTEN__
     //     ImGui_ImplGlfw_InstallEmscriptenCallbacks(window, "#canvas");
     // #endif
-    //     ImGui_ImplOpenGL3_Init(glsl_version);
-    //
-    //     // Load Fonts
-    //     // - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use ImGui::PushFont()/PopFont() to select them.
-    //     // - AddFontFromFileTTF() will return the ImFont* so you can store it if you need to select the font among multiple.
-    //     // - If the file cannot be loaded, the function will return a nullptr. Please handle those errors in your application (e.g. use an assertion, or display an error and quit).
-    //     // - Use '#define IMGUI_ENABLE_FREETYPE' in your imconfig file to use Freetype for higher quality font rendering.
-    //     // - Read 'docs/FONTS.md' for more instructions and details. If you like the default font but want it to scale better, consider using the 'ProggyVector' from the same author!
-    //     // - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double backslash \\ !
-    //     // - Our Emscripten build process allows embedding fonts to be accessible at runtime from the "fonts/" folder. See Makefile.emscripten for details.
+    _ = imgui.ImGui_ImplOpenGL3_Init(@ptrCast(@constCast(glsl_version)));
+    defer imgui.ImGui_ImplOpenGL3_Shutdown();
+
+    // Load Fonts
+    // - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use imgui.PushFont()/PopFont() to select them.
+    // - AddFontFromFileTTF() will return the ImFont* so you can store it if you need to select the font among multiple.
+    // - If the file cannot be loaded, the function will return a nullptr. Please handle those errors in your application (e.g. use an assertion, or display an error and quit).
+    // - Use '#define IMGUI_ENABLE_FREETYPE' in your imconfig file to use Freetype for higher quality font rendering.
+    // - Read 'docs/FONTS.md' for more instructions and details. If you like the default font but want it to scale better, consider using the 'ProggyVector' from the same author!
+    // - Remember that in C/C++ if you want to include a backslash \ in a string literal you need to write a double backslash \\ !
+    // - Our Emscripten build process allows embedding fonts to be accessible at runtime from the "fonts/" folder. See Makefile.emscripten for details.
     //     //style.FontSizeBase = 20.0f;
     //     //io.Fonts->AddFontDefault();
     //     //io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\segoeui.ttf");
@@ -132,95 +141,91 @@ pub fn main() !void {
     //     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf");
     //     //ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf");
     //     //IM_ASSERT(font != nullptr);
-    //
-    //     // Our state
-    //     bool show_demo_window = true;
-    //     bool show_another_window = false;
-    //     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-    //
-    //     // Main loop
+
+    // Our state
+    var show_demo_window = true;
+    var show_another_window = false;
+    const clear_color = imgui.ImVec4{ .x = 0.45, .y = 0.55, .z = 0.60, .w = 1.00 };
+    var f: f32 = 0.0;
+    var counter: u32 = 0;
+
+    // Main loop
     // #ifdef __EMSCRIPTEN__
     //     // For an Emscripten build we are disabling file-system access, so let's not attempt to do a fopen() of the imgui.ini file.
     //     // You may manually call LoadIniSettingsFromMemory() to load settings from your own storage.
     //     io.IniFilename = nullptr;
     //     EMSCRIPTEN_MAINLOOP_BEGIN
     // #else
-    //     while (!glfwWindowShouldClose(window))
+    while (glfw.glfwWindowShouldClose(window) == 0)
     // #endif
-    //     {
-    //         // Poll and handle events (inputs, window resize, etc.)
-    //         // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui wants to use your inputs.
-    //         // - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main application, or clear/overwrite your copy of the mouse data.
-    //         // - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to your main application, or clear/overwrite your copy of the keyboard data.
-    //         // Generally you may always pass all inputs to dear imgui, and hide them from your application based on those two flags.
-    //         glfwPollEvents();
-    //         if (glfwGetWindowAttrib(window, GLFW_ICONIFIED) != 0)
-    //         {
-    //             ImGui_ImplGlfw_Sleep(10);
-    //             continue;
-    //         }
-    //
-    //         // Start the Dear ImGui frame
-    //         ImGui_ImplOpenGL3_NewFrame();
-    //         ImGui_ImplGlfw_NewFrame();
-    //         ImGui::NewFrame();
-    //
-    //         // 1. Show the big demo window (Most of the sample code is in ImGui::ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
-    //         if (show_demo_window)
-    //             ImGui::ShowDemoWindow(&show_demo_window);
-    //
-    //         // 2. Show a simple window that we create ourselves. We use a Begin/End pair to create a named window.
-    //         {
-    //             static float f = 0.0f;
-    //             static int counter = 0;
-    //
-    //             ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
-    //
-    //             ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
-    //             ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
-    //             ImGui::Checkbox("Another Window", &show_another_window);
-    //
-    //             ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-    //             ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
-    //
-    //             if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-    //                 counter++;
-    //             ImGui::SameLine();
-    //             ImGui::Text("counter = %d", counter);
-    //
-    //             ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-    //             ImGui::End();
-    //         }
-    //
-    //         // 3. Show another simple window.
-    //         if (show_another_window)
-    //         {
-    //             ImGui::Begin("Another Window", &show_another_window);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
-    //             ImGui::Text("Hello from another window!");
-    //             if (ImGui::Button("Close Me"))
-    //                 show_another_window = false;
-    //             ImGui::End();
-    //         }
-    //
-    //         // Rendering
-    //         ImGui::Render();
-    //         int display_w, display_h;
-    //         glfwGetFramebufferSize(window, &display_w, &display_h);
-    //         glViewport(0, 0, display_w, display_h);
-    //         glClearColor(clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w);
-    //         glClear(GL_COLOR_BUFFER_BIT);
-    //         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-    //
-    //         glfwSwapBuffers(window);
-    //     }
+    {
+        // Poll and handle events (inputs, window resize, etc.)
+        // You can read the io.WantCaptureMouse, io.WantCaptureKeyboard flags to tell if dear imgui wants to use your inputs.
+        // - When io.WantCaptureMouse is true, do not dispatch mouse input data to your main application, or clear/overwrite your copy of the mouse data.
+        // - When io.WantCaptureKeyboard is true, do not dispatch keyboard input data to your main application, or clear/overwrite your copy of the keyboard data.
+        // Generally you may always pass all inputs to dear imgui, and hide them from your application based on those two flags.
+        glfw.glfwPollEvents();
+        if (glfw.glfwGetWindowAttrib(window, glfw.GLFW_ICONIFIED) != 0) {
+            imgui.ImGui_ImplGlfw_Sleep(10);
+            continue;
+        }
+
+        // Start the Dear ImGui frame
+        imgui.ImGui_ImplOpenGL3_NewFrame();
+        imgui.ImGui_ImplGlfw_NewFrame();
+        imgui.NewFrame();
+
+        // 1. Show the big demo window (Most of the sample code is in imgui.ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
+        if (show_demo_window)
+            imgui.ShowDemoWindow(&show_demo_window);
+
+        // 2. Show a simple window that we create ourselves. We use a Begin/End pair to create a named window.
+        {
+            _ = imgui.Begin(T("Hello, world!"), null, 0); // Create a window called "Hello, world!" and append into it.
+
+            imgui.Text(T("This is some useful text.")); // Display some text (you can use a format strings too)
+            _ = imgui.Checkbox(T("Demo Window"), &show_demo_window); // Edit bools storing our window open/close state
+            _ = imgui.Checkbox(T("Another Window"), &show_another_window);
+
+            _ = imgui.SliderFloat(T("float"), &f, 0.0, 1.0, null, 0); // Edit 1 float using a slider from 0.0f to 1.0f
+            // TODO:
+            // imgui.ColorEdit3("clear color", clear_color); // Edit 3 floats representing a color
+
+            if (imgui.Button(T("Button"), &.{ .x = 0, .y = 0 })) // Buttons return true when clicked (most widgets return true when edited/activated)
+                counter += 1;
+            imgui.SameLine(0, 0);
+            // TODO:
+            // imgui.Text(T("counter = %d"), counter);
+
+            // TODO:
+            // imgui.Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0 / io.Framerate, io.Framerate);
+            imgui.End();
+        }
+
+        // 3. Show another simple window.
+        if (show_another_window) {
+            // Pass a pointer to our bool variable
+            // (the window will have a closing button that will clear the bool when clicked)
+            _ = imgui.Begin(T("Another Window"), &show_another_window, 0);
+            imgui.Text(T("Hello from another window!"));
+            if (imgui.Button(T("Close Me"), &.{ .x = 0, .y = 0 }))
+                show_another_window = false;
+            imgui.End();
+        }
+
+        // Rendering
+        imgui.Render();
+        var display_w: c_int = undefined;
+        var display_h: c_int = undefined;
+        glfw.glfwGetFramebufferSize(window, &display_w, &display_h);
+        gl.glViewport(0, 0, display_w, display_h);
+        gl.glClearColor(clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w);
+        gl.glClear(gl.GL_COLOR_BUFFER_BIT);
+        imgui.ImGui_ImplOpenGL3_RenderDrawData(imgui.GetDrawData());
+
+        glfw.glfwSwapBuffers(window);
+    }
     // #ifdef __EMSCRIPTEN__
     //     EMSCRIPTEN_MAINLOOP_END;
     // #endif
-    //
-    //     // Cleanup
-    //     ImGui_ImplOpenGL3_Shutdown();
-    //     ImGui_ImplGlfw_Shutdown();
-    //     ImGui::DestroyContext();
-    //
-    //     glfwDestroyWindow(window);
 }
