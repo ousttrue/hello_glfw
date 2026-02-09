@@ -9,10 +9,16 @@ const CXCursor = @import("CXCursor.zig");
 const ZigGenerator = @import("ZigGenerator.zig");
 const cx_declaration = @import("cx_declaration.zig");
 const DebugPrinter = @import("DebugPrinter.zig");
+const SizePrinter = @import("SizePrinter.zig");
 
-//
-// exe {zig|debug} entroy_point
-//
+fn usage(writer: *std.Io.Writer) !void {
+    try writer.print(
+        \\ usage: {s} {{zig|debug|size_h|size_cpp}} c_headers....
+        \\     ex. zcindex zig imgui.h
+        \\
+    , .{std.mem.span(std.os.argv[0])});
+}
+
 pub fn main() !void {
     var writer_buf: [1024]u8 = undefined;
     var writer = std.fs.File.stdout().writer(&writer_buf);
@@ -24,6 +30,12 @@ pub fn main() !void {
             try main_zig(std.os.argv[2..], &writer.interface);
         } else if (std.mem.eql(u8, cmd, "debug")) {
             try main_debug(std.os.argv[2..], &writer.interface);
+        } else if (std.mem.eql(u8, cmd, "size_h")) {
+            // extern "C"
+            try main_size(std.os.argv[2..], &writer.interface, false);
+        } else if (std.mem.eql(u8, cmd, "size_cpp")) {
+            // impl
+            try main_size(std.os.argv[2..], &writer.interface, true);
         }
         return;
     }
@@ -31,12 +43,34 @@ pub fn main() !void {
     try usage(&writer.interface);
 }
 
-fn usage(writer: *std.Io.Writer) !void {
-    try writer.print(
-        \\ usage: {s} {{zig|debug}} c_headers....
-        \\     ex. zcindex zig imgui.h
-        \\
-    , .{std.mem.span(std.os.argv[0])});
+fn main_size(argv: []const [*:0]const u8, writer: *std.Io.Writer, impl: bool) !void {
+    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
+    defer _ = gpa.detectLeaks();
+    const allocator = gpa.allocator();
+
+    var cindex_parser = if (argv.len == 1)
+        try CIndexParser.fromSingleHeader(allocator, argv[0])
+    else
+        try CIndexParser.fromMultiHeadr(allocator, argv);
+    defer cindex_parser.deinit();
+
+    const tu = try cindex_parser.parse();
+    defer c.clang_disposeTranslationUnit(tu);
+
+    var printer = SizePrinter.init(
+        allocator,
+        writer,
+        cindex_parser.entry_point,
+        cindex_parser.include_dirs.items,
+        impl,
+    );
+    defer printer.deinit();
+
+    _ = c.clang_visitChildren(
+        c.clang_getTranslationUnitCursor(tu),
+        SizePrinter.SizePrinter_visitor,
+        &printer,
+    );
 }
 
 fn main_debug(argv: []const [*:0]const u8, writer: *std.Io.Writer) !void {
@@ -95,6 +129,12 @@ fn main_zig(argv: []const [*:0]const u8, writer: *std.Io.Writer) !void {
     );
 
     try writer.writeAll(
+        \\const std = @import("std");
+        \\
+        \\pub const c = @cImport({
+        \\    @cInclude("size_offset.h");
+        \\});
+        \\
         \\pub fn ImVector(T: type) type {
         \\    return struct {
         \\        Size: i32,

@@ -50,18 +50,52 @@ pub fn build(b: *std.Build) !void {
         .optimize = std.builtin.OptimizeMode.ReleaseSafe,
     });
 
-    const zcindex_run = b.addRunArtifact(zcindex_dep.artifact("zcindex"));
-    zcindex_run.addFileArg(imgui_dep.path("imgui.h"));
-    zcindex_run.addFileArg(imgui_dep.path("backends/imgui_impl_glfw.h"));
-    zcindex_run.addFileArg(imgui_dep.path("backends/imgui_impl_opengl3.h"));
-    const imgui_mod_src = zcindex_run.captureStdOut();
-    const imgui_src_install = b.addInstallFile(imgui_mod_src, "src/imgui.zig");
-    b.getInstallStep().dependOn(&imgui_src_install.step);
+    var installs: [3]*std.Build.Step.InstallFile = undefined;
+    {
+        const zcindex_run = b.addRunArtifact(zcindex_dep.artifact("zcindex"));
+        zcindex_run.addArg("zig");
+        zcindex_run.addFileArg(imgui_dep.path("imgui.h"));
+        zcindex_run.addFileArg(imgui_dep.path("backends/imgui_impl_glfw.h"));
+        zcindex_run.addFileArg(imgui_dep.path("backends/imgui_impl_opengl3.h"));
+        const imgui_mod_src = zcindex_run.captureStdOut();
+        const imgui_src_install = b.addInstallFile(imgui_mod_src, "src/imgui.zig");
+        installs[0] = imgui_src_install;
+        b.getInstallStep().dependOn(&imgui_src_install.step);
+    }
+    {
+        const zcindex_run = b.addRunArtifact(zcindex_dep.artifact("zcindex"));
+        zcindex_run.addArg("size_h");
+        zcindex_run.addFileArg(imgui_dep.path("imgui.h"));
+        zcindex_run.addFileArg(imgui_dep.path("backends/imgui_impl_glfw.h"));
+        zcindex_run.addFileArg(imgui_dep.path("backends/imgui_impl_opengl3.h"));
+        const imgui_mod_src = zcindex_run.captureStdOut();
+        const imgui_src_install = b.addInstallFile(imgui_mod_src, "src/size_offset.h");
+        installs[1] = imgui_src_install;
+        b.getInstallStep().dependOn(&imgui_src_install.step);
+    }
+    {
+        const zcindex_run = b.addRunArtifact(zcindex_dep.artifact("zcindex"));
+        zcindex_run.addArg("size_cpp");
+        zcindex_run.addFileArg(imgui_dep.path("imgui.h"));
+        zcindex_run.addFileArg(imgui_dep.path("backends/imgui_impl_glfw.h"));
+        zcindex_run.addFileArg(imgui_dep.path("backends/imgui_impl_opengl3.h"));
+        const imgui_mod_src = zcindex_run.captureStdOut();
+        const imgui_src_install = b.addInstallFile(imgui_mod_src, "src/size_offset.cpp");
+        installs[2] = imgui_src_install;
+        b.getInstallStep().dependOn(&imgui_src_install.step);
+    }
     const imgui_mod = b.addModule("imgui", .{
         .target = target,
         .optimize = optimize,
         // .root_source_file = imgui_mod_src,
         .root_source_file = b.path("zig-out/src/imgui.zig"),
+        .link_libc = true,
+        .link_libcpp = true,
+    });
+    imgui_mod.addIncludePath(b.path("zig-out/src"));
+    imgui_mod.addIncludePath(imgui_dep.path(""));
+    imgui_mod.addCSourceFile(.{
+        .file = b.path("zig-out/src/size_offset.cpp"),
     });
 
     // if (b.option(bool, "samples", "samples") orelse false) {
@@ -69,10 +103,22 @@ pub fn build(b: *std.Build) !void {
         const sample_compiled = try build_sample(b, target, optimize, sample, sokol_dep, imgui_dep);
         // if (sample.use_imgui) {
         sample_compiled.root_module.addImport("imgui", imgui_mod);
-        sample_compiled.step.dependOn(&imgui_src_install.step);
+        for (installs) |install| {
+            sample_compiled.step.dependOn(&install.step);
+        }
         // }
     }
     // }
+
+    {
+        const exe_tests = b.addTest(.{
+            .root_module = imgui_mod,
+        });
+        b.installArtifact(exe_tests);
+        const run_exe_tests = b.addRunArtifact(exe_tests);
+        const test_step = b.step("test", "Run tests");
+        test_step.dependOn(&run_exe_tests.step);
+    }
 }
 
 fn build_sample(

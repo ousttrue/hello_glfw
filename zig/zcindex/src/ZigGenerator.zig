@@ -2,6 +2,13 @@ const std = @import("std");
 const cx_declaration = @import("cx_declaration.zig");
 const ZigGenerator = @This();
 
+const skip_types = [_][]const u8{
+    // template ImVector
+    "ImVector",
+    // ImGuiTextFilter::ImGuiTextRange
+    "ImGuiTextRange",
+};
+
 const opaque_names = [_][]const u8{
     "ImGuiContext",
     "ImDrawListSharedData",
@@ -14,10 +21,12 @@ const c_to_zig = std.StaticStringMap([]const u8).initComptime(&.{
     .{ "float", "f32" },
 });
 
+allocator: std.mem.Allocator,
 usedMap: std.StringHashMap(u32),
 
 pub fn init(allocator: std.mem.Allocator) @This() {
     return .{
+        .allocator = allocator,
         .usedMap = .init(allocator),
     };
 }
@@ -86,6 +95,18 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             // Test
             // try writer.print("test \"{s}\" {{\n", .{name});
             // try writer.writeAll("}");
+            // 
+            for(skip_types)|skip|{
+                if(std.mem.eql(u8, name, skip)){
+                    return;
+                }
+            }
+            try writer.print(
+                \\test "{s}" {{
+                \\try std.testing.expectEqual(@sizeOf({s}), c.{s}_sizeof());
+                \\}}
+                \\
+            , .{ name, name, name });
         },
         .int_enum => |int_enum| {
             const name = int_enum.name.toString();
@@ -98,12 +119,26 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             }
             e.value_ptr.* = 1;
 
-            const enum_name = name;
-            try writer.print("pub const {s} = enum(i32) {{\n", .{enum_name});
-            for (int_enum.values) |value| {
-                try writer.print("    {s} = {},\n", .{ value.name.toString(), value.value });
+            if (std.mem.endsWith(u8, name, "_")) {
+                for (int_enum.values) |value| {
+                    try writer.print("pub const {s} = {};\n", .{ value.name.toString(), value.value });
+                }
+            } else {
+                var used: std.AutoHashMap(i64, u32) = .init(this.allocator);
+                defer used.deinit();
+
+                try writer.print("pub const {s} = enum(i32) {{\n", .{name});
+                for (int_enum.values) |value| {
+                    const kv = try used.getOrPut(value.value);
+                    if (kv.found_existing) {
+                        kv.value_ptr.* += 1;
+                    } else {
+                        kv.value_ptr.* = 1;
+                        try writer.print("    {s} = {},\n", .{ value.name.toString(), value.value });
+                    }
+                }
+                try writer.writeAll("};");
             }
-            try writer.writeAll("};");
         },
         .function => |function| {
             const name = function.name.toString();
