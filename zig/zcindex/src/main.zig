@@ -162,7 +162,7 @@ fn main_zig(argv: []const [*:0]const u8, writer: *std.Io.Writer) !void {
     for (data.cursors.items) |cursor| {
         if (try cx_declaration.Type.createFromCursor(allocator, cursor)) |decl| {
             defer decl.destroy(allocator);
-            const zig_src = try g.allocPrintDecl(allocator, decl);
+            const zig_src = try g.allocPrintDecl(allocator, decl, false);
             defer allocator.free(zig_src);
             if (zig_src.len > 0) {
                 try writer.print("{s}\n", .{zig_src});
@@ -249,7 +249,7 @@ test "zig struct" {
 
     var zig_generator = ZigGenerator.init(allocator);
     defer zig_generator.deinit();
-    const zig_src = try zig_generator.allocPrintDecl(allocator, decl);
+    const zig_src = try zig_generator.allocPrintDecl(allocator, decl, false);
     defer allocator.free(zig_src);
     try std.testing.expectEqualSlices(u8,
         \\pub const Hoge = struct {
@@ -306,7 +306,7 @@ test "zig enum" {
 
     var zig_generator = ZigGenerator.init(allocator);
     defer zig_generator.deinit();
-    const zig_src = try zig_generator.allocPrintDecl(allocator, decl);
+    const zig_src = try zig_generator.allocPrintDecl(allocator, decl, false);
     defer allocator.free(zig_src);
     try std.testing.expectEqualSlices(u8,
         \\pub const ImGuiWindowFlags_ = enum(i32) {

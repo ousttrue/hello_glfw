@@ -145,7 +145,7 @@ pub fn main() !void {
     // Our state
     var show_demo_window = true;
     var show_another_window = false;
-    const clear_color = imgui.ImVec4{ .x = 0.45, .y = 0.55, .z = 0.60, .w = 1.00 };
+    var clear_color = imgui.ImVec4{ .x = 0.45, .y = 0.55, .z = 0.60, .w = 1.00 };
     var f: f32 = 0.0;
     var counter: u32 = 0;
 
@@ -188,8 +188,7 @@ pub fn main() !void {
             _ = imgui.Checkbox(T("Another Window"), &show_another_window);
 
             _ = imgui.SliderFloat(T("float"), &f, 0.0, 1.0, null, 0); // Edit 1 float using a slider from 0.0f to 1.0f
-            // TODO:
-            // imgui.ColorEdit3("clear color", clear_color); // Edit 3 floats representing a color
+            _ = imgui.ColorEdit3(T("clear color"), &clear_color.x, 0); // Edit 3 floats representing a color
 
             if (imgui.Button(T("Button"), &.{ .x = 0, .y = 0 })) // Buttons return true when clicked (most widgets return true when edited/activated)
                 counter += 1;

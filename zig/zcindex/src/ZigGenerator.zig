@@ -43,23 +43,23 @@ pub fn deinit(this: *@This()) void {
     this.usedMap.deinit();
 }
 
-pub fn allocPrintDecl(this: *@This(), allocator: std.mem.Allocator, t: cx_declaration.Type) ![]const u8 {
+pub fn allocPrintDecl(this: *@This(), allocator: std.mem.Allocator, t: cx_declaration.Type, is_param: bool) ![]const u8 {
     var out = std.Io.Writer.Allocating.init(allocator);
     defer out.deinit();
-    try this._allocPrintDecl(&out.writer, t);
+    try this._allocPrintDecl(&out.writer, t, is_param);
     return out.toOwnedSlice();
 }
 
-fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Type) !void {
+fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Type, is_param: bool) !void {
     switch (t) {
         .value => |v| {
             try writeValue(writer, v);
         },
         .pointer => |p| {
-            try _allocPrintDeref(writer, p.type_ref);
+            try _allocPrintDeref(writer, p.type_ref, is_param);
         },
         .array => |a| {
-            try _allocPrintDeref(writer, a.type_ref);
+            try _allocPrintDeref(writer, a.type_ref, is_param);
         },
         .typedef => |typedef| {
             const name = typedef.name.toString();
@@ -70,7 +70,7 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             e.value_ptr.* = 1;
 
             try writer.print("pub const {s} = ", .{name});
-            try _allocPrintDeref(writer, typedef.type_ref);
+            try _allocPrintDeref(writer, typedef.type_ref, is_param);
             try writer.writeAll(";");
         },
         .container => |container| {
@@ -100,7 +100,7 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             try writer.print("pub const {s} = extern struct {{\n", .{name});
             for (container.fields) |field| {
                 try writer.print("    {s}: ", .{field.name.toString()});
-                try _allocPrintDeref(writer, field.type_ref);
+                try _allocPrintDeref(writer, field.type_ref, false);
                 try writer.writeAll(",\n");
             }
             try writer.writeAll("};\n");
@@ -116,7 +116,7 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
 
             try writer.print(
                 "try std.testing.expectEqual(@sizeOf({s}), c.{s}_sizeof());\n",
-                .{name, name},
+                .{ name, name },
             );
             for (container.fields) |field| {
                 try writer.print(
@@ -176,10 +176,10 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
                     try writer.writeAll(", ");
                 }
                 try writer.print("{s}: ", .{param.name.toString()});
-                try _allocPrintDeref(writer, param.type_ref);
+                try _allocPrintDeref(writer, param.type_ref, true);
             }
             try writer.writeAll(") ");
-            try _allocPrintDeref(writer, function.ret_type);
+            try _allocPrintDeref(writer, function.ret_type, false);
             try writer.writeAll(";\n");
             try writer.print("pub const {s} = {s};", .{ name, mangling });
         },
@@ -189,14 +189,14 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
     }
 }
 
-fn allocPrintDeref(allocator: std.mem.Allocator, t: cx_declaration.Type) ![]const u8 {
+fn allocPrintDeref(allocator: std.mem.Allocator, t: cx_declaration.Type, is_param: bool) ![]const u8 {
     var out = std.Io.Writer.Allocating.init(allocator);
     defer out.deinit();
-    try _allocPrintDeref(&out.writer, t);
+    try _allocPrintDeref(&out.writer, t, is_param);
     return out.toOwnedSlice();
 }
 
-fn _allocPrintDeref(writer: *std.Io.Writer, t: cx_declaration.Type) !void {
+fn _allocPrintDeref(writer: *std.Io.Writer, t: cx_declaration.Type, is_param: bool) !void {
     switch (t) {
         .value => |v| {
             try writeValue(writer, v);
@@ -206,12 +206,18 @@ fn _allocPrintDeref(writer: *std.Io.Writer, t: cx_declaration.Type) !void {
                 try writer.writeAll("?*anyopaque");
             } else {
                 try writer.writeAll("?*");
-                try _allocPrintDeref(writer, p.type_ref);
+                try _allocPrintDeref(writer, p.type_ref, is_param);
             }
         },
         .array => |a| {
-            try writer.print("[{}]", .{a.len});
-            try _allocPrintDeref(writer, a.type_ref);
+            if (is_param) {
+                // as pointer
+                try writer.writeAll("?*");
+                try _allocPrintDeref(writer, a.type_ref, is_param);
+            } else {
+                try writer.print("[{}]", .{a.len});
+                try _allocPrintDeref(writer, a.type_ref, is_param);
+            }
         },
         .container => |container| {
             // only name
@@ -273,7 +279,7 @@ test "value" {
     {
         const zig_src = try allocPrintDeref(allocator, .{
             .value = .{ .u8 = void{} },
-        });
+        }, false);
         defer allocator.free(zig_src);
         try std.testing.expectEqualSlices(u8, "u8", zig_src);
     }
@@ -289,7 +295,7 @@ test "pointer" {
             }),
         };
         defer type_ref.destroy(allocator);
-        const zig_src = try allocPrintDeref(allocator, type_ref);
+        const zig_src = try allocPrintDeref(allocator, type_ref, false);
         defer allocator.free(zig_src);
         try std.testing.expectEqualSlices(u8, "?*u8", zig_src);
     }
