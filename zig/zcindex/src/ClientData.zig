@@ -38,7 +38,6 @@ pub export fn ClientData_visitor(
     };
 }
 
-
 pub fn getCursorByName(this: @This(), name: []const u8) ?CXCursor {
     for (this.cursors.items) |item| {
         const spelling = CXString.initFromCursorSpelling(item.cursor);
