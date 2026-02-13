@@ -183,7 +183,7 @@ pub fn main() !void {
         {
             _ = imgui.Begin(T("Hello, world!"), null, 0); // Create a window called "Hello, world!" and append into it.
 
-            imgui.Text(T("This is some useful text.")); // Display some text (you can use a format strings too)
+            imgui.Text(T("This is some useful text."), .{}); // Display some text (you can use a format strings too)
             _ = imgui.Checkbox(T("Demo Window"), &show_demo_window); // Edit bools storing our window open/close state
             _ = imgui.Checkbox(T("Another Window"), &show_another_window);
 
@@ -193,8 +193,8 @@ pub fn main() !void {
             if (imgui.Button(T("Button"), &.{ .x = 0, .y = 0 })) // Buttons return true when clicked (most widgets return true when edited/activated)
                 counter += 1;
             imgui.SameLine(0, 0);
-            imgui.Text(T("counter = %d"), counter);
-            imgui.Text(T("Application average %.3f ms/frame (%.1f FPS)"), 1000.0 / io.Framerate, io.Framerate);
+            imgui.Text(T("counter = %d"), .{counter});
+            imgui.Text(T("Application average %.3f ms/frame (%.1f FPS)"), .{ 1000.0 / io.Framerate, io.Framerate });
             imgui.End();
         }
 
@@ -203,7 +203,7 @@ pub fn main() !void {
             // Pass a pointer to our bool variable
             // (the window will have a closing button that will clear the bool when clicked)
             _ = imgui.Begin(T("Another Window"), &show_another_window, 0);
-            imgui.Text(T("Hello from another window!"));
+            imgui.Text(T("Hello from another window!"), .{});
             if (imgui.Button(T("Close Me"), &.{ .x = 0, .y = 0 }))
                 show_another_window = false;
             imgui.End();

@@ -2,6 +2,7 @@ const std = @import("std");
 const c = @import("cindex");
 const CXCursor = @import("CXCursor.zig");
 const CXString = @import("CXString.zig");
+const CXLocation = @import("CXLocation.zig");
 const cx_util = @import("cx_util.zig");
 const MAX_CHILDREN_LEN = 512;
 
@@ -165,6 +166,96 @@ pub const FunctionType = struct {
     pub const Param = struct {
         name: CXString,
         type_ref: Type,
+        default: ?[]const u8 = null,
+
+        fn init(
+            allocator: std.mem.Allocator,
+            src_map: *std.StringHashMap([]const u8),
+            param: c.CXCursor,
+        ) !@This() {
+            const param_name = CXString.initFromCursorSpelling(param);
+            var this = @This(){
+                .name = param_name,
+                .type_ref = try createFromType(allocator, c.clang_getCursorType(param)),
+            };
+            var buf: [32]c.CXCursor = undefined;
+            const children = try cx_util.getChildren(param, &buf);
+            for (children) |child| {
+                const child_kind = CXString.initFromCursorKind(child);
+                defer child_kind.deinit();
+                const child_pp = CXString.initFromCursorDisplayName(child);
+                defer child_pp.deinit();
+                const src = try getSource(allocator, src_map, child);
+                switch (child.kind) {
+                    c.CXCursor_TypeRef,
+                    c.CXCursor_ParmDecl,
+                    => {
+                        // skip
+                    },
+                    else => {
+                        // try this.writeIndent();
+
+                        // const cursor_location = CXLocation.init(_cursor);
+                        const child_location = CXLocation.init(child);
+                        // CXLocation.init(_cursor).end.offset;
+                        // search next ')'
+                        var x = child_location.end.offset;
+                        while (x < src.len) : (x += 1) {
+                            if (src[x] == ')' or src[x] == ',') {
+                                break;
+                            }
+                        }
+                        // try this.writer.print("  [{s}] => '{s}'\n", .{
+                        //     child_kind.toString(),
+                        //     src[child_location.start.offset..x],
+                        // });
+                        var default = src[child_location.start.offset..x];
+                        if (std.mem.eql(u8, default, "= NULL")) {
+                            default = "null";
+                        } else if (default[0] == '=') {
+                            default = default[1..];
+                        }
+                        this.default = default;
+
+                        break;
+                    },
+                }
+            }
+            return this;
+        }
+
+        const MATCH: []const []const u8 = &.{ "type", "c" };
+        const REPLACE: []const []const u8 = &.{ "_type", "_c" };
+
+        pub fn getName(this: @This()) []const u8 {
+            const name = this.name.toString();
+            for (MATCH, REPLACE) |m, r| {
+                if (std.mem.eql(u8, name, m)) {
+                    return r;
+                }
+            }
+            return name;
+        }
+
+        fn getSource(allocator: std.mem.Allocator, src_map: *std.StringHashMap([]const u8), cursor: c.CXCursor) ![]const u8 {
+            const file = CXString.initFromCursorFilepath(cursor);
+            defer file.deinit();
+            const path = file.toString();
+            if (src_map.get(path)) |src| {
+                return src;
+            } else {
+                const src = try std.fs.cwd().readFileAllocOptions(
+                    allocator,
+                    path,
+                    std.math.maxInt(u32),
+                    null,
+                    .@"1",
+                    null,
+                );
+                try src_map.put(path, src);
+                return src;
+            }
+        }
     };
 
     name: CXString,
@@ -175,13 +266,14 @@ pub const FunctionType = struct {
 
     pub fn create(
         allocator: std.mem.Allocator,
+        src_map: *std.StringHashMap([]const u8),
         name: CXString,
         mangling: CXString,
         ret_type: Type,
         params: []const c.CXCursor,
         is_variadic: bool,
     ) !*@This() {
-        const this = try allocator.create(@This());
+        var this = try allocator.create(@This());
         this.* = .{
             .name = name,
             .mangling = mangling,
@@ -190,11 +282,7 @@ pub const FunctionType = struct {
             .is_variadic = is_variadic,
         };
         for (params, 0..) |param, i| {
-            const param_name = CXString.initFromCursorSpelling(param);
-            this.params[i] = .{
-                .name = param_name,
-                .type_ref = try createFromType(allocator, c.clang_getCursorType(param)),
-            };
+            this.params[i] = try Param.init(allocator, src_map, param);
         }
         return this;
     }
@@ -275,7 +363,11 @@ pub const Type = union(enum) {
     int_enum: *EnumType,
     named: CXString,
 
-    pub fn createFromCursor(allocator: std.mem.Allocator, cursor: c.CXCursor) !?@This() {
+    pub fn createFromCursor(
+        allocator: std.mem.Allocator,
+        src_map: *std.StringHashMap([]const u8),
+        cursor: c.CXCursor,
+    ) !?@This() {
         return switch (cursor.kind) {
             c.CXCursor_TypedefDecl => .{
                 .typedef = try TypedefType.create(
@@ -345,6 +437,7 @@ pub const Type = union(enum) {
                 break :blk .{
                     .function = try FunctionType.create(
                         allocator,
+                        src_map,
                         CXString.initFromCursorSpelling(cursor),
                         CXString.initFromMangling(cursor),
                         try createFromType(allocator, c.clang_getCursorResultType(cursor)),

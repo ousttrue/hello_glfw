@@ -33,6 +33,7 @@ const c_to_zig = std.StaticStringMap([]const u8).initComptime(&.{
 });
 
 allocator: std.mem.Allocator,
+src_map: std.StringHashMap([]const u8),
 writer: *std.Io.Writer,
 entry_point: []const u8,
 include_dirs: []const []const u8,
@@ -75,6 +76,7 @@ pub fn init(
 
     return .{
         .allocator = allocator,
+        .src_map = .init(allocator),
         .writer = writer,
         .entry_point = entry_point,
         .include_dirs = include_dirs,
@@ -83,6 +85,11 @@ pub fn init(
 }
 
 pub fn deinit(this: *@This()) void {
+    var it = this.src_map.iterator();
+    while (it.next()) |e| {
+        this.allocator.free(e.value_ptr.*);
+    }
+    this.src_map.deinit();
     this.usedMap.deinit();
 }
 
@@ -110,7 +117,7 @@ fn onVisit(
     }
     // try this.cursors.append(this.allocator, cursor);
 
-    if (try cx_declaration.Type.createFromCursor(this.allocator, _cursor)) |decl| {
+    if (try cx_declaration.Type.createFromCursor(this.allocator, &this.src_map, _cursor)) |decl| {
         defer decl.destroy(this.allocator);
         const zig_src = try allocPrintDecl(this, this.allocator, decl, false);
         defer this.allocator.free(zig_src);
@@ -259,12 +266,15 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             }
             e.value_ptr.* = 1;
 
+            //
+            // extern fn {mangling}
+            //
             try writer.print("extern fn {s}(", .{mangling});
             for (function.params, 0..) |param, i| {
                 if (i > 0) {
                     try writer.writeAll(", ");
                 }
-                try writer.print("{s}: ", .{param.name.toString()});
+                try writer.print("{s}: ", .{param.getName()});
                 try _allocPrintDeref(writer, param.type_ref, true);
             }
             if (function.is_variadic) {
@@ -273,7 +283,50 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             try writer.writeAll(") ");
             try _allocPrintDeref(writer, function.ret_type, false);
             try writer.writeAll(";\n");
-            try writer.print("pub const {s} = {s};", .{ name, mangling });
+            //
+            // pub fn fn_name(p0: t0, opts: struct{
+            //   p1: t1 = default_value,
+            // }) ret_type
+            try writer.print("pub fn {s}(", .{name});
+            for (function.params, 0..) |param, i| {
+                if (i > 0) {
+                    try writer.writeAll(", ");
+                }
+                try writer.print("{s}: ", .{param.getName()});
+                try _allocPrintDeref(writer, param.type_ref, true);
+            }
+            if (function.is_variadic) {
+                try writer.writeAll(", __vargs__: anytype");
+            }
+            try writer.writeAll(")");
+            try _allocPrintDeref(writer, function.ret_type, false);
+            //
+            // body
+            //
+            // {
+            //   const __args__ = .{p0, p1} ++ __vargs__;
+            //   comptime var types: []type = &.{};
+            //   inline for (@typeInfo.fields[1..]) |fld| {
+            //     res = res ++ sep ++ fld;
+            //   }
+            //   return @call(.auto, mangling, tuple);
+            // }
+            try writer.writeAll("{\n");
+            try writer.writeAll("    const __args__ = .{");
+            for (function.params, 0..) |param, i| {
+                if(i>0){
+                    try writer.writeAll(", ");
+                }
+                try writer.print("{s}", .{param.getName()});
+            }
+            try writer.writeAll("}");
+            if (function.is_variadic) {
+                try writer.writeAll(" ++ __vargs__");
+            }
+            try writer.writeAll(";\n");
+
+            try writer.print("   return @call(.auto, {s}, __args__);\n", .{mangling});
+            try writer.writeAll("}\n");
         },
         .named => {
             unreachable;
