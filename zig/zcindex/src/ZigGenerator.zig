@@ -309,6 +309,11 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
                     // std.debug.assert(param.default != null);
                     try writer.print("    {s}: ", .{param.getName()});
                     try _allocPrintDeref(writer, param.type_ref, true);
+                    if (param.default) |default| {
+                        try writer.print(" = {s}", .{default});
+                    } else {
+                        try writer.writeAll(" = .{}");
+                    }
                     try writer.writeAll(",\n");
                 }
                 try writer.writeAll("}");

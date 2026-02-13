@@ -172,53 +172,60 @@ pub const FunctionType = struct {
             allocator: std.mem.Allocator,
             src_map: *std.StringHashMap([]const u8),
             param: c.CXCursor,
+            end_offset: usize,
         ) !@This() {
             const param_name = CXString.initFromCursorSpelling(param);
             var this = @This(){
                 .name = param_name,
                 .type_ref = try createFromType(allocator, c.clang_getCursorType(param)),
             };
-            var buf: [32]c.CXCursor = undefined;
-            const children = try cx_util.getChildren(param, &buf);
-            for (children) |child| {
-                const child_kind = CXString.initFromCursorKind(child);
-                defer child_kind.deinit();
-                const child_pp = CXString.initFromCursorDisplayName(child);
-                defer child_pp.deinit();
-                const src = try getSource(allocator, src_map, child);
-                switch (child.kind) {
-                    c.CXCursor_TypeRef,
-                    c.CXCursor_ParmDecl,
-                    => {
-                        // skip
-                    },
-                    else => {
-                        // try this.writeIndent();
-
-                        // const cursor_location = CXLocation.init(_cursor);
-                        const child_location = CXLocation.init(child);
-                        // CXLocation.init(_cursor).end.offset;
-                        // search next ')'
-                        var x = child_location.end.offset;
-                        while (x < src.len) : (x += 1) {
-                            if (src[x] == ')' or src[x] == ',') {
-                                break;
+            const pp = CXString.initFromPP(param);
+            if (std.mem.indexOf(u8, pp.toString(), "=")) |_| {
+                var buf: [32]c.CXCursor = undefined;
+                const children = try cx_util.getChildren(param, &buf);
+                for (children) |child| {
+                    const child_kind = CXString.initFromCursorKind(child);
+                    defer child_kind.deinit();
+                    const child_pp = CXString.initFromCursorDisplayName(child);
+                    defer child_pp.deinit();
+                    const src = try getSource(allocator, src_map, child);
+                    switch (child.kind) {
+                        c.CXCursor_TypeRef,
+                        c.CXCursor_ParmDecl,
+                        => {
+                            // skip
+                        },
+                        else => {
+                            std.log.err("{s}: {s}", .{ param_name.toString(), child_kind.toString() });
+                            // const cursor_location = CXLocation.init(_cursor);
+                            const child_location = CXLocation.init(child);
+                            // CXLocation.init(_cursor).end.offset;
+                            // search next ')'
+                            // var x = child_location.end.offset;
+                            // while (x < src.len) : (x += 1) {
+                            //     if (src[x] == ')' or src[x] == ',') {
+                            //         break;
+                            //     }
+                            // }
+                            // try this.writer.print("  [{s}] => '{s}'\n", .{
+                            //     child_kind.toString(),
+                            //     src[child_location.start.offset..x],
+                            // });
+                            var default = src[child_location.start.offset..end_offset];
+                            default = std.mem.trimEnd(u8, default, &std.ascii.whitespace);
+                            if (std.mem.endsWith(u8, default, ",")) {
+                                default = default[0 .. default.len - 1];
                             }
-                        }
-                        // try this.writer.print("  [{s}] => '{s}'\n", .{
-                        //     child_kind.toString(),
-                        //     src[child_location.start.offset..x],
-                        // });
-                        var default = src[child_location.start.offset..x];
-                        if (std.mem.eql(u8, default, "= NULL")) {
-                            default = "null";
-                        } else if (default[0] == '=') {
-                            default = default[1..];
-                        }
-                        this.default = default;
+                            if (std.mem.eql(u8, default, "= NULL")) {
+                                default = "null";
+                            } else if (default[0] == '=') {
+                                default = default[1..];
+                            }
+                            this.default = default;
 
-                        break;
-                    },
+                            break;
+                        },
+                    }
                 }
             }
             return this;
@@ -266,6 +273,7 @@ pub const FunctionType = struct {
 
     pub fn create(
         allocator: std.mem.Allocator,
+        cursor: c.CXCursor,
         src_map: *std.StringHashMap([]const u8),
         name: CXString,
         mangling: CXString,
@@ -282,7 +290,11 @@ pub const FunctionType = struct {
             .is_variadic = is_variadic,
         };
         for (params, 0..) |param, i| {
-            this.params[i] = try Param.init(allocator, src_map, param);
+            const end_offset = if (i + 1 < params.len)
+                CXLocation.init(params[i + 1]).start.offset
+            else
+                CXLocation.init(cursor).end.offset - 1;
+            this.params[i] = try Param.init(allocator, src_map, param, end_offset);
         }
         return this;
     }
@@ -437,6 +449,7 @@ pub const Type = union(enum) {
                 break :blk .{
                     .function = try FunctionType.create(
                         allocator,
+                        cursor,
                         src_map,
                         CXString.initFromCursorSpelling(cursor),
                         CXString.initFromMangling(cursor),
