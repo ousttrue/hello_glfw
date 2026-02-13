@@ -1,6 +1,9 @@
 const std = @import("std");
+const c = @import("cindex");
 const cx_declaration = @import("cx_declaration.zig");
 const ZigGenerator = @This();
+const cx_util = @import("cx_util.zig");
+const CXString = @import("CXString.zig");
 
 const skip_types = [_][]const u8{
     // template ImVector
@@ -30,11 +33,51 @@ const c_to_zig = std.StaticStringMap([]const u8).initComptime(&.{
 });
 
 allocator: std.mem.Allocator,
+writer: *std.Io.Writer,
+entry_point: []const u8,
+include_dirs: []const []const u8,
 usedMap: std.StringHashMap(u32),
 
-pub fn init(allocator: std.mem.Allocator) @This() {
+pub fn init(
+    allocator: std.mem.Allocator,
+    writer: *std.Io.Writer,
+    entry_point: []const u8,
+    include_dirs: []const []const u8,
+) @This() {
+    writer.writeAll(
+        \\const std = @import("std");
+        \\const glfw = @import("glfw");
+        \\const GLFWwindow = glfw.GLFWwindow;
+        \\const GLFWmonitor = glfw.GLFWmonitor;
+        \\
+        \\pub const c = @cImport({
+        \\    @cInclude("size_offset.h");
+        \\});
+        \\
+        \\pub fn ImVector(T: type) type {
+        \\    return extern struct {
+        \\        Size: i32,
+        \\        Capacity: i32,
+        \\        Data: *T,
+        \\    };
+        \\}
+        \\
+        \\pub const ImGuiStoragePair = struct {
+        \\    key: ImGuiID,
+        \\    val_p: *anyopaque,
+        \\};
+        \\
+        \\pub const ImFontBaked = opaque{};
+        \\pub const ImFontAtlas = opaque{};
+        \\
+        \\
+    ) catch unreachable;
+
     return .{
         .allocator = allocator,
+        .writer = writer,
+        .entry_point = entry_point,
+        .include_dirs = include_dirs,
         .usedMap = .init(allocator),
     };
 }
@@ -42,6 +85,52 @@ pub fn init(allocator: std.mem.Allocator) @This() {
 pub fn deinit(this: *@This()) void {
     this.usedMap.deinit();
 }
+
+pub export fn ZigGenerator_visitor(
+    cursor: c.CXCursor,
+    parent: c.CXCursor,
+    client_data: c.CXClientData,
+) c.CXChildVisitResult {
+    const data: *@This() = @ptrCast(@alignCast(client_data));
+    return data.onVisit(cursor, parent) catch {
+        return c.CXChildVisit_Break;
+    };
+}
+
+fn onVisit(
+    this: *@This(),
+    _cursor: c.CXCursor,
+    _parent: c.CXCursor,
+) !c.CXChildVisitResult {
+    _ = _parent;
+    // const cursor = CXCursor.init(_cursor, _parent);
+    if (!cx_util.isAcceptable(_cursor, this.entry_point, this.include_dirs)) {
+        // skip
+        return c.CXVisit_Continue;
+    }
+    // try this.cursors.append(this.allocator, cursor);
+
+    if (try cx_declaration.Type.createFromCursor(this.allocator, _cursor)) |decl| {
+        defer decl.destroy(this.allocator);
+        const zig_src = try allocPrintDecl(this, this.allocator, decl, false);
+        defer this.allocator.free(zig_src);
+        if (zig_src.len > 0) {
+            try this.writer.print("{s}\n", .{zig_src});
+        }
+    }
+
+    return switch (_cursor.kind) {
+        // c.CXCursor_Namespace => c.CXChildVisit_Recurse,
+        // c.CXCursor_StructDecl => c.CXChildVisit_Recurse,
+        // c.CXCursor_EnumDecl => c.CXChildVisit_Recurse,
+        // c.CXCursor_FunctionDecl => c.CXChildVisit_Recurse,
+
+        c.CXCursor_Namespace => c.CXChildVisit_Recurse,
+        else => c.CXChildVisit_Continue,
+    };
+}
+// for (data.cursors.items) |cursor| {
+// }
 
 pub fn allocPrintDecl(this: *@This(), allocator: std.mem.Allocator, t: cx_declaration.Type, is_param: bool) ![]const u8 {
     var out = std.Io.Writer.Allocating.init(allocator);
@@ -177,6 +266,9 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
                 }
                 try writer.print("{s}: ", .{param.name.toString()});
                 try _allocPrintDeref(writer, param.type_ref, true);
+            }
+            if (function.is_variadic) {
+                try writer.writeAll(", ...");
             }
             try writer.writeAll(") ");
             try _allocPrintDeref(writer, function.ret_type, false);

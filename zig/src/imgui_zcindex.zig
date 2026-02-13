@@ -193,11 +193,8 @@ pub fn main() !void {
             if (imgui.Button(T("Button"), &.{ .x = 0, .y = 0 })) // Buttons return true when clicked (most widgets return true when edited/activated)
                 counter += 1;
             imgui.SameLine(0, 0);
-            // TODO:
-            // imgui.Text(T("counter = %d"), counter);
-
-            // TODO:
-            // imgui.Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0 / io.Framerate, io.Framerate);
+            imgui.Text(T("counter = %d"), counter);
+            imgui.Text(T("Application average %.3f ms/frame (%.1f FPS)"), 1000.0 / io.Framerate, io.Framerate);
             imgui.End();
         }
 

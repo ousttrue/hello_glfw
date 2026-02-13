@@ -25,11 +25,6 @@ pub fn debugPrint(this: @This()) void {
     std.log.warn("[{s}] {s} => {s}", .{ kind_name.toString(), spelling.toString(), std.mem.span(ppp) });
 }
 
-pub fn isFromMainFile(this: @This()) bool {
-    const loc = c.clang_getCursorLocation(this.cursor);
-    return c.clang_Location_isFromMainFile(loc) != 0;
-}
-
 pub fn getDisplay(this: @This()) []const u8 {
     if (c.clang_getCString(this.display)) |p| {
         return std.mem.span(p);

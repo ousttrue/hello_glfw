@@ -2,6 +2,7 @@ const std = @import("std");
 const c = @import("cindex");
 const CXCursor = @import("CXCursor.zig");
 const CXString = @import("CXString.zig");
+const cx_util = @import("cx_util.zig");
 
 const skip_types = [_][]const u8{
     // template ImVector
@@ -77,8 +78,7 @@ fn onVisit(
     _cursor: c.CXCursor,
     _parent: c.CXCursor,
 ) !c.CXChildVisitResult {
-    const cursor = CXCursor.init(_cursor, _parent);
-    if (!this.isAcceptable(cursor)) {
+    if (!cx_util.isAcceptable(_cursor, this.entry_point, this.include_dirs)) {
         // skip
         return c.CXVisit_Continue;
     }
@@ -225,29 +225,4 @@ fn writeIndent(this: @This()) !void {
     for (0..this.stack_index) |_| {
         try this.writer.writeAll("  ");
     }
-}
-
-fn isAcceptable(this: @This(), cursor: CXCursor) bool {
-    if (cursor.isFromMainFile()) {
-        return true;
-    }
-
-    const filename = CXString.initFromCursorFilepath(cursor.cursor);
-    defer filename.deinit();
-
-    // if (c.clang_getCString(cursor.filename)) |p| {
-    {
-        const cursor_path = filename.toString();
-        // std.log.debug("{s}, {s}", .{ this.entry_point, cursor_path });
-        if (std.mem.eql(u8, cursor_path, this.entry_point)) {
-            return true;
-        }
-        for (this.include_dirs) |include| {
-            if (std.mem.startsWith(u8, cursor_path, include)) {
-                return true;
-            }
-        }
-    }
-
-    return false;
 }

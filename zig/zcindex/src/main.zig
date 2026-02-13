@@ -4,7 +4,6 @@ const std = @import("std");
 const c = @import("cindex");
 const cx_utuil = @import("cx_util.zig");
 const CIndexParser = @import("CIndexParsr.zig");
-const ClientData = @import("ClientData.zig");
 const CXCursor = @import("CXCursor.zig");
 const ZigGenerator = @import("ZigGenerator.zig");
 const cx_declaration = @import("cx_declaration.zig");
@@ -115,60 +114,19 @@ fn main_zig(argv: []const [*:0]const u8, writer: *std.Io.Writer) !void {
     const tu = try cindex_parser.parse();
     defer c.clang_disposeTranslationUnit(tu);
 
-    var data = ClientData.init(
+    var g = ZigGenerator.init(
         allocator,
+        writer,
         cindex_parser.entry_point,
         cindex_parser.include_dirs.items,
     );
-    defer data.deinit();
+    defer g.deinit();
 
     _ = c.clang_visitChildren(
         c.clang_getTranslationUnitCursor(tu),
-        ClientData.ClientData_visitor,
-        &data,
+        ZigGenerator.ZigGenerator_visitor,
+        &g,
     );
-
-    try writer.writeAll(
-        \\const std = @import("std");
-        \\const glfw = @import("glfw");
-        \\const GLFWwindow = glfw.GLFWwindow;
-        \\const GLFWmonitor = glfw.GLFWmonitor;
-        \\
-        \\pub const c = @cImport({
-        \\    @cInclude("size_offset.h");
-        \\});
-        \\
-        \\pub fn ImVector(T: type) type {
-        \\    return extern struct {
-        \\        Size: i32,
-        \\        Capacity: i32,
-        \\        Data: *T,
-        \\    };
-        \\}
-        \\
-        \\pub const ImGuiStoragePair = struct {
-        \\    key: ImGuiID,
-        \\    val_p: *anyopaque,
-        \\};
-        \\
-        \\pub const ImFontBaked = opaque{};
-        \\pub const ImFontAtlas = opaque{};
-        \\
-        \\
-    );
-
-    var g = ZigGenerator.init(allocator);
-    defer g.deinit();
-    for (data.cursors.items) |cursor| {
-        if (try cx_declaration.Type.createFromCursor(allocator, cursor)) |decl| {
-            defer decl.destroy(allocator);
-            const zig_src = try g.allocPrintDecl(allocator, decl, false);
-            defer allocator.free(zig_src);
-            if (zig_src.len > 0) {
-                try writer.print("{s}\n", .{zig_src});
-            }
-        }
-    }
 }
 
 test {
@@ -196,24 +154,24 @@ test "cindex" {
     const tu = _tu orelse @panic("parse");
     defer c.clang_disposeTranslationUnit(tu);
 
-    var data = ClientData.init(
-        allocator,
-        cindex_parser.entry_point,
-        cindex_parser.include_dirs.items,
-    );
-    defer data.deinit();
+    // var data = ClientData.init(
+    //     allocator,
+    //     cindex_parser.entry_point,
+    //     cindex_parser.include_dirs.items,
+    // );
+    // defer data.deinit();
 
-    _ = c.clang_visitChildren(
-        c.clang_getTranslationUnitCursor(tu),
-        // T.debug_visitor,
-        ClientData.ClientData_visitor,
-        &data,
-    );
+    // _ = c.clang_visitChildren(
+    //     c.clang_getTranslationUnitCursor(tu),
+    //     // T.debug_visitor,
+    //     ClientData.ClientData_visitor,
+    //     &data,
+    // );
 
-    {
-        const cursor = data.getCursorByName("__unknown__");
-        try std.testing.expect(cursor == null);
-    }
+    // {
+    //     const cursor = data.getCursorByName("__unknown__");
+    //     try std.testing.expect(cursor == null);
+    // }
 }
 
 test "zig struct" {
@@ -232,26 +190,26 @@ test "zig struct" {
     const tu = _tu orelse @panic("parse");
     defer c.clang_disposeTranslationUnit(tu);
 
-    var data = ClientData.init(
-        allocator,
-        cindex_parser.entry_point,
-        cindex_parser.include_dirs.items,
-    );
-    defer data.deinit();
-    _ = c.clang_visitChildren(
-        c.clang_getTranslationUnitCursor(tu),
-        ClientData.ClientData_visitor,
-        &data,
-    );
-
-    const cursor = data.getCursorByName("Hoge").?;
-    const decl = (try cx_declaration.Type.createFromCursor(allocator, cursor)).?;
-    defer decl.destroy(allocator);
-
-    var zig_generator = ZigGenerator.init(allocator);
-    defer zig_generator.deinit();
-    const zig_src = try zig_generator.allocPrintDecl(allocator, decl, false);
-    defer allocator.free(zig_src);
+    // var data = ClientData.init(
+    //     allocator,
+    //     cindex_parser.entry_point,
+    //     cindex_parser.include_dirs.items,
+    // );
+    // defer data.deinit();
+    // _ = c.clang_visitChildren(
+    //     c.clang_getTranslationUnitCursor(tu),
+    //     ClientData.ClientData_visitor,
+    //     &data,
+    // );
+    //
+    // const cursor = data.getCursorByName("Hoge").?;
+    // const decl = (try cx_declaration.Type.createFromCursor(allocator, cursor)).?;
+    // defer decl.destroy(allocator);
+    //
+    // var zig_generator = ZigGenerator.init(allocator);
+    // defer zig_generator.deinit();
+    // const zig_src = try zig_generator.allocPrintDecl(allocator, decl, false);
+    // defer allocator.free(zig_src);
     // try std.testing.expectEqualSlices(u8,
     //     \\pub const Hoge = struct {
     //     \\    a: i32,
@@ -289,26 +247,26 @@ test "zig enum" {
     const tu = _tu orelse @panic("parse");
     defer c.clang_disposeTranslationUnit(tu);
 
-    var data = ClientData.init(
-        allocator,
-        cindex_parser.entry_point,
-        cindex_parser.include_dirs.items,
-    );
-    defer data.deinit();
-    _ = c.clang_visitChildren(
-        c.clang_getTranslationUnitCursor(tu),
-        ClientData.ClientData_visitor,
-        &data,
-    );
-
-    const cursor = data.getCursorByName("ImGuiWindowFlags_").?;
-    const decl = (try cx_declaration.Type.createFromCursor(allocator, cursor)).?;
-    defer decl.destroy(allocator);
-
-    var zig_generator = ZigGenerator.init(allocator);
-    defer zig_generator.deinit();
-    const zig_src = try zig_generator.allocPrintDecl(allocator, decl, false);
-    defer allocator.free(zig_src);
+    // var data = ClientData.init(
+    //     allocator,
+    //     cindex_parser.entry_point,
+    //     cindex_parser.include_dirs.items,
+    // );
+    // defer data.deinit();
+    // _ = c.clang_visitChildren(
+    //     c.clang_getTranslationUnitCursor(tu),
+    //     ClientData.ClientData_visitor,
+    //     &data,
+    // );
+    //
+    // const cursor = data.getCursorByName("ImGuiWindowFlags_").?;
+    // const decl = (try cx_declaration.Type.createFromCursor(allocator, cursor)).?;
+    // defer decl.destroy(allocator);
+    //
+    // var zig_generator = ZigGenerator.init(allocator);
+    // defer zig_generator.deinit();
+    // const zig_src = try zig_generator.allocPrintDecl(allocator, decl, false);
+    // defer allocator.free(zig_src);
     // try std.testing.expectEqualSlices(u8,
     //     \\pub const ImGuiWindowFlags_ = enum(i32) {
     //     \\    ImGuiWindowFlags_None = 0,

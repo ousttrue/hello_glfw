@@ -2,6 +2,8 @@ const std = @import("std");
 const c = @import("cindex");
 const CXCursor = @import("CXCursor.zig");
 const CXString = @import("CXString.zig");
+const cx_util = @import("cx_util.zig");
+const MAX_CHILDREN_LEN = 512;
 
 pub const ValueType = union(enum) {
     void,
@@ -169,6 +171,7 @@ pub const FunctionType = struct {
     mangling: CXString,
     ret_type: Type,
     params: []const Param,
+    is_variadic: bool,
 
     pub fn create(
         allocator: std.mem.Allocator,
@@ -176,6 +179,7 @@ pub const FunctionType = struct {
         mangling: CXString,
         ret_type: Type,
         params: []const Param,
+        is_variadic: bool,
     ) !*@This() {
         const this = try allocator.create(@This());
         this.* = .{
@@ -183,6 +187,7 @@ pub const FunctionType = struct {
             .mangling = mangling,
             .ret_type = ret_type,
             .params = try allocator.dupe(Param, params),
+            .is_variadic = is_variadic,
         };
         return this;
     }
@@ -291,21 +296,23 @@ pub const Type = union(enum) {
     int_enum: *EnumType,
     named: CXString,
 
-    pub fn createFromCursor(allocator: std.mem.Allocator, cursor: CXCursor) !?@This() {
-        return switch (cursor.cursor.kind) {
+    pub fn createFromCursor(allocator: std.mem.Allocator, cursor: c.CXCursor) !?@This() {
+        return switch (cursor.kind) {
             c.CXCursor_TypedefDecl => .{
                 .typedef = try TypedefType.create(
                     allocator,
-                    CXString.initFromCursorSpelling(cursor.cursor),
-                    try createFromType(allocator, c.clang_getTypedefDeclUnderlyingType(cursor.cursor)),
+                    CXString.initFromCursorSpelling(cursor),
+                    try createFromType(allocator, c.clang_getTypedefDeclUnderlyingType(cursor)),
                 ),
             },
             //
             c.CXCursor_StructDecl => blk: {
-                const name = CXString.initFromCursorSpelling(cursor.cursor);
-                const fields = try ContainerType.getFields(allocator, cursor.children.items);
+                const name = CXString.initFromCursorSpelling(cursor);
+                var buf: [MAX_CHILDREN_LEN]c.CXCursor = undefined;
+                const children = try cx_util.getChildren(cursor, &buf);
+                const fields = try ContainerType.getFields(allocator, children);
                 defer allocator.free(fields);
-                const size: usize = switch (c.clang_Type_getSizeOf(c.clang_getCursorType(cursor.cursor))) {
+                const size: usize = switch (c.clang_Type_getSizeOf(c.clang_getCursorType(cursor))) {
                     c.CXTypeLayoutError_Invalid => @panic("Type is of kind CXType_Invalid."),
                     c.CXTypeLayoutError_Incomplete => 0, //@panic("The type is an incomplete Type."),
                     c.CXTypeLayoutError_Dependent => @panic("The type is a dependent Type."),
@@ -334,12 +341,14 @@ pub const Type = union(enum) {
                 //         .{ .value = .i32 },
                 //     ),
                 // };
-                const values = try EnumType.getValues(allocator, cursor.children.items);
+                var buf: [MAX_CHILDREN_LEN]c.CXCursor = undefined;
+                const children = try cx_util.getChildren(cursor, &buf);
+                const values = try EnumType.getValues(allocator, children);
                 defer allocator.free(values);
                 break :blk .{
                     .int_enum = try EnumType.create(
                         allocator,
-                        CXString.initFromCursorSpelling(cursor.cursor),
+                        CXString.initFromCursorSpelling(cursor),
                         values,
                     ),
                 };
@@ -347,15 +356,18 @@ pub const Type = union(enum) {
             c.CXCursor_EnumConstantDecl => null,
             //
             c.CXCursor_FunctionDecl => blk: {
-                const params = try FunctionType.getParams(allocator, cursor.children.items);
+                var buf: [MAX_CHILDREN_LEN]c.CXCursor = undefined;
+                const children = try cx_util.getChildren(cursor, &buf);
+                const params = try FunctionType.getParams(allocator, children);
                 defer allocator.free(params);
                 break :blk .{
                     .function = try FunctionType.create(
                         allocator,
-                        CXString.initFromCursorSpelling(cursor.cursor),
-                        CXString.initFromMangling(cursor.cursor),
-                        try createFromType(allocator, c.clang_getCursorResultType(cursor.cursor)),
+                        CXString.initFromCursorSpelling(cursor),
+                        CXString.initFromMangling(cursor),
+                        try createFromType(allocator, c.clang_getCursorResultType(cursor)),
                         params,
+                        c.clang_isFunctionTypeVariadic(c.clang_getCursorType(cursor)) != 0,
                     ),
                 };
             },
@@ -377,9 +389,9 @@ pub const Type = union(enum) {
             c.CXCursor_UnexposedAttr,
             => null,
             else => {
-                const str = CXString.initFromCursorKind(cursor.cursor);
+                const str = CXString.initFromCursorKind(cursor);
                 defer str.deinit();
-                std.log.warn("cursor.type [{s} = {}]", .{ str.toString(), cursor.cursor.kind });
+                std.log.warn("cursor.type [{s} = {}]", .{ str.toString(), cursor.kind });
                 @panic("UNKNOWN");
             },
         };
