@@ -288,14 +288,31 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             //   p1: t1 = default_value,
             // }) ret_type
             try writer.print("pub fn {s}(", .{name});
+            var has_args: ?usize = null;
+            var has_default: ?usize = null;
             for (function.params, 0..) |param, i| {
                 if (i > 0) {
                     try writer.writeAll(", ");
                 }
+                if (param.default != null) {
+                    has_default = i;
+                    break;
+                }
+                has_args = i;
                 try writer.print("{s}: ", .{param.getName()});
                 try _allocPrintDeref(writer, param.type_ref, true);
             }
-            if (function.is_variadic) {
+            if (has_default) |default_index| {
+                try writer.writeAll("__opts__: struct{\n");
+                for (default_index..function.params.len) |i| {
+                    const param = function.params[i];
+                    // std.debug.assert(param.default != null);
+                    try writer.print("    {s}: ", .{param.getName()});
+                    try _allocPrintDeref(writer, param.type_ref, true);
+                    try writer.writeAll(",\n");
+                }
+                try writer.writeAll("}");
+            } else if (function.is_variadic) {
                 try writer.writeAll(", __vargs__: anytype");
             }
             try writer.writeAll(")");
@@ -303,29 +320,47 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             //
             // body
             //
-            // {
-            //   const __args__ = .{p0, p1} ++ __vargs__;
-            //   comptime var types: []type = &.{};
-            //   inline for (@typeInfo.fields[1..]) |fld| {
-            //     res = res ++ sep ++ fld;
-            //   }
-            //   return @call(.auto, mangling, tuple);
-            // }
             try writer.writeAll("{\n");
-            try writer.writeAll("    const __args__ = .{");
-            for (function.params, 0..) |param, i| {
-                if(i>0){
-                    try writer.writeAll(", ");
+            try writer.writeAll("    const __args__ = ");
+            var prefix: []const u8 = "";
+            if (has_args != null) {
+                // args
+                try writer.writeAll(prefix);
+                prefix = "++";
+                try writer.writeAll(".{");
+                for (function.params, 0..) |param, i| {
+                    if (param.default != null) {
+                        break;
+                    }
+                    if (i > 0) {
+                        try writer.writeAll(", ");
+                    }
+                    try writer.print("{s}", .{param.getName()});
                 }
-                try writer.print("{s}", .{param.getName()});
+                try writer.writeAll("}");
             }
-            try writer.writeAll("}");
+            if (has_default) |default_index| {
+                // opts
+                try writer.writeAll(prefix);
+                prefix = "++";
+                try writer.writeAll(".{");
+                for (default_index..function.params.len) |i| {
+                    const param = function.params[i];
+                    try writer.print("__opts__.{s},", .{param.getName()});
+                }
+                try writer.writeAll("}");
+            }
             if (function.is_variadic) {
-                try writer.writeAll(" ++ __vargs__");
+                try writer.writeAll(prefix);
+                prefix = "++";
+                try writer.writeAll("__vargs__");
+            }
+            if (prefix.len == 0) {
+                try writer.writeAll(".{}");
             }
             try writer.writeAll(";\n");
 
-            try writer.print("   return @call(.auto, {s}, __args__);\n", .{mangling});
+            try writer.print("    return @call(.auto, {s}, __args__);\n", .{mangling});
             try writer.writeAll("}\n");
         },
         .named => {
