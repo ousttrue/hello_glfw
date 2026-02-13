@@ -88,6 +88,7 @@ fn main_debug(argv: []const [*:0]const u8, writer: *std.Io.Writer) !void {
 
     var printer = DebugPrinter.init(
         writer,
+        allocator,
         cindex_parser.entry_point,
         cindex_parser.include_dirs.items,
     );

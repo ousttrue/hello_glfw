@@ -2,7 +2,7 @@ const std = @import("std");
 const c = @import("cindex");
 const cx_declaration = @import("cx_declaration.zig");
 const ZigGenerator = @This();
-const cx_util = @import("cx_util.zig");
+const CXLocation = @import("CXLocation.zig");
 const CXString = @import("CXString.zig");
 
 const skip_types = [_][]const u8{
@@ -104,7 +104,7 @@ fn onVisit(
 ) !c.CXChildVisitResult {
     _ = _parent;
     // const cursor = CXCursor.init(_cursor, _parent);
-    if (!cx_util.isAcceptable(_cursor, this.entry_point, this.include_dirs)) {
+    if (!CXLocation.isAcceptable(_cursor, this.entry_point, this.include_dirs)) {
         // skip
         return c.CXVisit_Continue;
     }

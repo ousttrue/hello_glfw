@@ -170,7 +170,7 @@ pub const FunctionType = struct {
     name: CXString,
     mangling: CXString,
     ret_type: Type,
-    params: []const Param,
+    params: []Param,
     is_variadic: bool,
 
     pub fn create(
@@ -178,7 +178,7 @@ pub const FunctionType = struct {
         name: CXString,
         mangling: CXString,
         ret_type: Type,
-        params: []const Param,
+        params: []const c.CXCursor,
         is_variadic: bool,
     ) !*@This() {
         const this = try allocator.create(@This());
@@ -186,9 +186,16 @@ pub const FunctionType = struct {
             .name = name,
             .mangling = mangling,
             .ret_type = ret_type,
-            .params = try allocator.dupe(Param, params),
+            .params = try allocator.alloc(Param, params.len),
             .is_variadic = is_variadic,
         };
+        for (params, 0..) |param, i| {
+            const param_name = CXString.initFromCursorSpelling(param);
+            this.params[i] = .{
+                .name = param_name,
+                .type_ref = try createFromType(allocator, c.clang_getCursorType(param)),
+            };
+        }
         return this;
     }
 
@@ -200,34 +207,6 @@ pub const FunctionType = struct {
         }
         this.name.deinit();
         allocator.destroy(this);
-    }
-
-    pub fn getParams(allocator: std.mem.Allocator, children: []c.CXCursor) ![]Param {
-        var index: usize = 0;
-        for (children) |child| {
-            if (child.kind == c.CXCursor_ParmDecl) {
-                index += 1;
-            }
-        }
-        if (index == 0) {
-            return &.{};
-        }
-
-        var params = try allocator.alloc(Param, index);
-
-        index = 0;
-        for (children) |child| {
-            if (child.kind == c.CXCursor_ParmDecl) {
-                const name = CXString.initFromCursorSpelling(child);
-                params[index] = .{
-                    .name = name,
-                    .type_ref = try createFromType(allocator, c.clang_getCursorType(child)),
-                };
-                index += 1;
-            }
-        }
-
-        return params;
     }
 };
 
@@ -357,9 +336,12 @@ pub const Type = union(enum) {
             //
             c.CXCursor_FunctionDecl => blk: {
                 var buf: [MAX_CHILDREN_LEN]c.CXCursor = undefined;
-                const children = try cx_util.getChildren(cursor, &buf);
-                const params = try FunctionType.getParams(allocator, children);
-                defer allocator.free(params);
+                // const children = try cx_util.getChildren(cursor, &buf);
+                const param_count: usize = @intCast(c.clang_Cursor_getNumArguments(cursor));
+                var params = buf[0..param_count];
+                for (0..param_count) |i| {
+                    params[i] = c.clang_Cursor_getArgument(cursor, @intCast(i));
+                }
                 break :blk .{
                     .function = try FunctionType.create(
                         allocator,

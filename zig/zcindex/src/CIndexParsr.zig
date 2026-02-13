@@ -23,7 +23,9 @@ unsaved_file: ?c.CXUnsavedFile = null,
 command_line: std.ArrayList([*:0]const u8) = .{},
 include_dirs: std.ArrayList([]const u8) = .{},
 
-flags: u32 = c.CXTranslationUnit_DetailedPreprocessingRecord | c.CXTranslationUnit_SkipFunctionBodies,
+flags: u32 =
+    c.CXTranslationUnit_DetailedPreprocessingRecord |
+    c.CXTranslationUnit_SkipFunctionBodies,
 
 fn init(allocator: std.mem.Allocator) !@This() {
     var this = @This(){

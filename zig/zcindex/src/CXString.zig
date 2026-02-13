@@ -7,6 +7,10 @@ pub fn init(str: c.CXString) @This() {
     return .{ .str = str };
 }
 
+pub fn initFromPP(cursor: c.CXCursor) @This() {
+    return init(c.clang_getCursorPrettyPrinted(cursor, null));
+}
+
 pub fn initFromCursorKind(cursor: c.CXCursor) @This() {
     return init(c.clang_getCursorKindSpelling(cursor.kind));
 }
@@ -16,7 +20,7 @@ pub fn initFromTypeKind(cx_type: c.CXType) @This() {
 }
 
 pub fn initFromCursorDisplayName(cursor: c.CXCursor) @This() {
-    return init(c.clang_getCursorPrettyPrinted(cursor, null));
+    return init(c.clang_getCursorDisplayName(cursor));
 }
 
 pub fn initFromCursorSpelling(cursor: c.CXCursor) @This() {

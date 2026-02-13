@@ -7,39 +7,6 @@ const CXString = @import("CXString.zig");
 buf: []c.CXCursor,
 index: usize,
 
-pub fn isFromMainFile(cursor: c.CXCursor) bool {
-    const loc = c.clang_getCursorLocation(cursor);
-    return c.clang_Location_isFromMainFile(loc) != 0;
-}
-
-pub fn isAcceptable(
-    cursor: c.CXCursor,
-    entry_point: []const u8,
-    include_dirs: []const []const u8,
-) bool {
-    if (isFromMainFile(cursor)) {
-        return true;
-    }
-
-    const filename = CXString.initFromCursorFilepath(cursor);
-    defer filename.deinit();
-
-    // if (c.clang_getCString(cursor.filename)) |p| {
-    {
-        const cursor_path = filename.toString();
-        // std.log.debug("{s}, {s}", .{ this.entry_point, cursor_path });
-        if (std.mem.eql(u8, cursor_path, entry_point)) {
-            return true;
-        }
-        for (include_dirs) |include| {
-            if (std.mem.startsWith(u8, cursor_path, include)) {
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
 pub export fn GetChildren_visitor(
     cursor: c.CXCursor,
     parent: c.CXCursor,
@@ -100,3 +67,4 @@ test "GetChildren_visitor" {
         }
     }
 }
+

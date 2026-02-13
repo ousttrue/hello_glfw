@@ -2,7 +2,7 @@ const std = @import("std");
 const c = @import("cindex");
 const CXCursor = @import("CXCursor.zig");
 const CXString = @import("CXString.zig");
-const cx_util = @import("cx_util.zig");
+const CXLocation = @import("CXLocation.zig");
 
 const skip_types = [_][]const u8{
     // template ImVector
@@ -78,7 +78,7 @@ fn onVisit(
     _cursor: c.CXCursor,
     _parent: c.CXCursor,
 ) !c.CXChildVisitResult {
-    if (!cx_util.isAcceptable(_cursor, this.entry_point, this.include_dirs)) {
+    if (!CXLocation.isAcceptable(_cursor, this.entry_point, this.include_dirs)) {
         // skip
         return c.CXVisit_Continue;
     }
