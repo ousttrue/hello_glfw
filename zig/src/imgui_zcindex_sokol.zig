@@ -47,19 +47,19 @@ export fn glfw_error_callback(err: c_int, description: [*c]const u8) void {
 }
 
 const Options = struct {
-    _no_depth_buffer: bool = false,
-    _sample_count: c_int = 1,
+    no_depth_buffer: bool = false,
+    sample_count: c_int = 1,
 };
 
 fn glfw_environment(opts: Options) sokol.gfx.Environment {
     return .{
         .defaults = .{
             .color_format = .RGBA8,
-            .depth_format = if (opts._no_depth_buffer)
+            .depth_format = if (opts.no_depth_buffer)
                 .NONE
             else
                 .DEPTH_STENCIL,
-            .sample_count = opts._sample_count,
+            .sample_count = opts.sample_count,
         },
     };
 }
@@ -71,9 +71,9 @@ fn glfw_swapchain(_window: *glfw.GLFWwindow, opts: Options) sokol.gfx.Swapchain 
     return .{
         .width = width,
         .height = height,
-        .sample_count = opts._sample_count,
+        .sample_count = opts.sample_count,
         .color_format = .RGBA8,
-        .depth_format = if (opts._no_depth_buffer) .NONE else .DEPTH_STENCIL,
+        .depth_format = if (opts.no_depth_buffer) .NONE else .DEPTH_STENCIL,
         .gl = .{
             // we just assume here that the GL framebuffer is always 0
             .framebuffer = 0,
@@ -88,12 +88,20 @@ pub fn main() !void {
     }
     defer glfw.glfwTerminate();
 
-    // GL 3.0 + GLSL 130
+    const opts = Options{};
+
+    // GL for sokol
     // const glsl_version: [*:0]const u8 = "#version 130";
-    glfw.glfwWindowHint(glfw.GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfw.glfwWindowHint(glfw.GLFW_CONTEXT_VERSION_MINOR, 0);
-    //glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);  // 3.2+ only
-    //glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);            // 3.0+ only
+    glfw.glfwWindowHint(glfw.GLFW_COCOA_RETINA_FRAMEBUFFER, 0);
+    if (opts.no_depth_buffer) {
+        glfw.glfwWindowHint(glfw.GLFW_DEPTH_BITS, 0);
+        glfw.glfwWindowHint(glfw.GLFW_STENCIL_BITS, 0);
+    }
+    glfw.glfwWindowHint(glfw.GLFW_SAMPLES, if (opts.sample_count == 1) 0 else opts.sample_count);
+    glfw.glfwWindowHint(glfw.GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfw.glfwWindowHint(glfw.GLFW_CONTEXT_VERSION_MINOR, 1);
+    glfw.glfwWindowHint(glfw.GLFW_OPENGL_FORWARD_COMPAT, glfw.GLFW_TRUE);
+    glfw.glfwWindowHint(glfw.GLFW_OPENGL_PROFILE, glfw.GLFW_OPENGL_CORE_PROFILE);
 
     // Create window with graphics context
     // Valid on GLFW 3.3+ only
@@ -155,8 +163,6 @@ pub fn main() !void {
     //     //io.Fonts->AddFontFromFileTTF("../../misc/fonts/Cousine-Regular.ttf");
     //     //ImFont* font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\ArialUni.ttf");
     //     //IM_ASSERT(font != nullptr);
-
-    const opts = Options{};
 
     // setup sokol_gfx
     const glfw_env: *const sokol.gfx.Environment = @ptrCast(&glfw_environment(opts));
