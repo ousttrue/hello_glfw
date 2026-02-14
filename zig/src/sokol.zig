@@ -2,7 +2,7 @@
 //  triangle-glfw.c
 //  Vertex buffer, simple shader, pipeline state object.
 //------------------------------------------------------------------------------
-const glfw = @import("glfw");
+const glfw = @import("glfw_glue.zig");
 const sokol = @import("sokol");
 const std = @import("std");
 

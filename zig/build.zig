@@ -14,16 +14,11 @@ const samples = [_]Sample{
         .name = "glfw_triangle",
         .root_source_file = "src/simple.zig",
     },
-    // .{
-    //     .name = "sokol_glfw_triangle",
-    //     .root_source_file = "src/sokol.zig",
-    //     .use_sokol = true,
-    // },
-    // .{
-    //     .name = "glfw_imgui",
-    //     .root_source_file = "src/imgui.zig",
-    //     .use_imgui = true,
-    // },
+    .{
+        .name = "sokol_glfw_triangle",
+        .root_source_file = "src/sokol.zig",
+        .use_sokol = true,
+    },
     .{
         .name = "glfw_imgui_clang",
         .root_source_file = "src/imgui_zcindex.zig",
@@ -111,6 +106,7 @@ pub fn build(b: *std.Build) !void {
         exe.root_module.addImport("glfw", glfw_lib.root_module);
         exe.linkLibrary(glad_lib);
         exe.root_module.addImport("glad", glad_lib.root_module);
+        exe.addIncludePath(b.path("src"));
 
         // if (sample.use_imgui) {
         exe.root_module.addImport("imgui", imgui_mod);
@@ -140,7 +136,6 @@ fn build_sample(
     sokol_dep: *std.Build.Dependency,
     imgui_dep: *std.Build.Dependency,
 ) !*std.Build.Step.Compile {
-    _ = sokol_dep;
     const mod = b.addModule(sample.name, .{
         .target = target,
         .optimize = optimize,
@@ -155,23 +150,23 @@ fn build_sample(
     });
     b.installArtifact(exe);
 
-    // if (sample.use_sokol) {
-    //     const t = b.addTranslateC(.{
-    //         .target = target,
-    //         .optimize = optimize,
-    //         .root_source_file = b.path("src/glfw_glue.h"),
-    //     });
-    //     t.addIncludePath(sokol_dep.path("src/sokol/c"));
-    //     mod.addImport("glfw", t.createModule());
-    //
-    //     exe.addCSourceFiles(.{
-    //         .root = b.path("src"),
-    //         .files = &.{"glfw_glue.c"},
-    //     });
-    //     exe.addIncludePath(sokol_dep.path("src/sokol/c"));
-    //
-    //     mod.addImport("sokol", sokol_dep.module("sokol"));
-    // }
+    if (sample.use_sokol) {
+        const t = b.addTranslateC(.{
+            .target = target,
+            .optimize = optimize,
+            .root_source_file = b.path("src/glfw_glue.h"),
+        });
+        t.addIncludePath(sokol_dep.path("src/sokol/c"));
+        mod.addImport("glfw", t.createModule());
+
+        exe.addCSourceFiles(.{
+            .root = b.path("src"),
+            .files = &.{"glfw_glue.c"},
+        });
+        exe.addIncludePath(sokol_dep.path("src/sokol/c"));
+
+        mod.addImport("sokol", sokol_dep.module("sokol"));
+    }
 
     if (sample.use_imgui) {
         exe.addCSourceFiles(.{
@@ -186,19 +181,11 @@ fn build_sample(
                 "backends/imgui_impl_glfw.cpp",
                 "backends/imgui_impl_opengl3.cpp",
             },
-            .flags = &.{
-            },
+            .flags = &.{},
         });
         exe.linkSystemLibrary("X11");
 
         exe.addIncludePath(imgui_dep.path(""));
-        // exe.addCSourceFiles(.{
-        //     .files = &.{
-        //         "imgui_helper/imgui_without_mangling.cpp",
-        //         "imgui_helper/imgui_impl_glfw.cpp",
-        //         "imgui_helper/imgui_impl_opengl3.cpp",
-        //     },
-        // });
     }
 
     return exe;
