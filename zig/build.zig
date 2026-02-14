@@ -10,10 +10,10 @@ const Sample = struct {
 };
 
 const samples = [_]Sample{
-    // .{
-    //     .name = "glfw_triangle",
-    //     .root_source_file = "src/simple.zig",
-    // },
+    .{
+        .name = "glfw_triangle",
+        .root_source_file = "src/simple.zig",
+    },
     // .{
     //     .name = "sokol_glfw_triangle",
     //     .root_source_file = "src/sokol.zig",
