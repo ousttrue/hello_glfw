@@ -27,6 +27,18 @@ const opaque_names = [_][]const u8{
     "ImFontAtlasBuilder",
 };
 
+const multi_object = [_][]const u8{
+    "u8",
+    // "ImFontAtlas",
+    // "ImFontBaked",
+    // "GLFWmonitor",
+    // "GLFWwindow",
+    // "ImGuiContext",
+    // "ImDrawListSharedData",
+    // "ImFontLoader",
+    // "ImGuiIO",
+};
+
 const c_to_zig = std.StaticStringMap([]const u8).initComptime(&.{
     .{ "char", "u8" },
     .{ "float", "f32" },
@@ -37,7 +49,7 @@ src_map: std.StringHashMap([]const u8),
 writer: *std.Io.Writer,
 entry_point: []const u8,
 include_dirs: []const []const u8,
-usedMap: std.StringHashMap(u32),
+funcUsedMap: std.StringHashMap(u32),
 
 pub fn init(
     allocator: std.mem.Allocator,
@@ -80,7 +92,7 @@ pub fn init(
         .writer = writer,
         .entry_point = entry_point,
         .include_dirs = include_dirs,
-        .usedMap = .init(allocator),
+        .funcUsedMap = .init(allocator),
     };
 }
 
@@ -90,7 +102,7 @@ pub fn deinit(this: *@This()) void {
         this.allocator.free(e.value_ptr.*);
     }
     this.src_map.deinit();
-    this.usedMap.deinit();
+    this.funcUsedMap.deinit();
 }
 
 pub export fn ZigGenerator_visitor(
@@ -99,8 +111,9 @@ pub export fn ZigGenerator_visitor(
     client_data: c.CXClientData,
 ) c.CXChildVisitResult {
     const data: *@This() = @ptrCast(@alignCast(client_data));
-    return data.onVisit(cursor, parent) catch {
-        return c.CXChildVisit_Break;
+    return data.onVisit(cursor, parent) catch |e| {
+        @panic(@errorName(e));
+        // return c.CXChildVisit_Break;
     };
 }
 
@@ -127,23 +140,96 @@ fn onVisit(
     }
 
     return switch (_cursor.kind) {
-        // c.CXCursor_Namespace => c.CXChildVisit_Recurse,
+        c.CXCursor_Namespace => c.CXChildVisit_Recurse,
         // c.CXCursor_StructDecl => c.CXChildVisit_Recurse,
         // c.CXCursor_EnumDecl => c.CXChildVisit_Recurse,
         // c.CXCursor_FunctionDecl => c.CXChildVisit_Recurse,
-
-        c.CXCursor_Namespace => c.CXChildVisit_Recurse,
         else => c.CXChildVisit_Continue,
     };
 }
-// for (data.cursors.items) |cursor| {
-// }
 
 pub fn allocPrintDecl(this: *@This(), allocator: std.mem.Allocator, t: cx_declaration.Type, is_param: bool) ![]const u8 {
     var out = std.Io.Writer.Allocating.init(allocator);
     defer out.deinit();
     try this._allocPrintDecl(&out.writer, t, is_param);
     return out.toOwnedSlice();
+}
+
+// -360.0f
+// +360.0f
+fn writerAsZig(t: cx_declaration.Type, writer: *std.io.Writer, c_expression: []const u8) !void {
+    switch (t) {
+        .value => |v| {
+            switch (v) {
+                .f32 => {
+                    if (std.mem.eql(u8, c_expression, "FLT_MAX")) {
+                        try writer.print("{}", .{std.math.floatMax(f32)});
+                    } else {
+                        var exp = c_expression;
+                        if (exp[exp.len - 1] == 'f') {
+                            exp = exp[0 .. exp.len - 1];
+                        }
+                        // std.log.err("{s}", .{exp});
+                        const f = try std.fmt.parseFloat(f32, exp);
+                        try writer.print("{}", .{f});
+                    }
+                },
+                else => {
+                    if (std.mem.eql(u8, c_expression, "sizeof(float)")) {
+                        try writer.writeAll("@sizeOf(f32)");
+                    } else {
+                        try writer.writeAll(c_expression);
+                    }
+                },
+            }
+        },
+        .typedef => {
+            try writer.writeAll("##typedef##");
+        },
+        .pointer => {
+            if (std.mem.eql(u8, c_expression, "NULL") or
+                std.mem.eql(u8, c_expression, "nullptr"))
+            {
+                try writer.writeAll("null");
+            } else if (std.mem.eql(u8, c_expression, "ImVec2(0, 0)") or
+                std.mem.eql(u8, c_expression, "ImVec2(0.0f, 0.0f)"))
+            {
+                try writer.writeAll("&.{ .x=0, .y=0 }");
+            } else if (std.mem.eql(u8, c_expression, "ImVec2(-FLT_MIN, 0)")) {
+                try writer.writeAll("&.{ .x=-std.math.floatMin(f32), .y=0 }");
+            } else if (std.mem.eql(u8, c_expression, "ImVec2(1, 1)")) {
+                try writer.writeAll("&.{ .x=1, .y=1 }");
+            } else if (std.mem.eql(u8, c_expression, "ImVec4(0, 0, 0, 0)")) {
+                try writer.writeAll("&.{ .x=0, .y=0, .z=0, .w=0 }");
+            } else if (std.mem.eql(u8, c_expression, "ImVec4(1, 1, 1, 1)")) {
+                try writer.writeAll("&.{ .x=1, .y=1, .z=1, .w=1 }");
+            } else if (c_expression[0] == '"' and c_expression[c_expression.len - 1] == '"') {
+                try writer.writeAll(c_expression);
+            } else {
+                try writer.print("##pointer=>{s}", .{c_expression});
+            }
+        },
+        .array => {
+            try writer.print("##array=>{s}##", .{c_expression});
+        },
+        .container => {
+            try writer.print("##container=>{s}##", .{c_expression});
+        },
+        .function => {
+            try writer.print("##function=>{s}##", .{c_expression});
+        },
+        .int_enum => {
+            try writer.print("##int_enum=>{s}##", .{c_expression});
+        },
+        .named => {
+            // try writer.print("##named=>{s}##", .{c_expression});
+            if (std.mem.eql(u8, c_expression, "NULL")) {
+                try writer.writeAll("null");
+            } else {
+                try writer.writeAll(c_expression);
+            }
+        },
+    }
 }
 
 fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Type, is_param: bool) !void {
@@ -159,11 +245,11 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
         },
         .typedef => |typedef| {
             const name = typedef.name.toString();
-            const e = try this.usedMap.getOrPut(name);
-            if (e.found_existing) {
-                return;
-            }
-            e.value_ptr.* = 1;
+            // const e = try this.usedMap.getOrPut(name);
+            // if (e.found_existing) {
+            //     return;
+            // }
+            // e.value_ptr.* = 1;
 
             try writer.print("pub const {s} = ", .{name});
             try _allocPrintDeref(writer, typedef.type_ref, is_param);
@@ -187,11 +273,11 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             if (container.fields.len == 0) {
                 return;
             }
-            const e = try this.usedMap.getOrPut(name);
-            if (e.found_existing) {
-                return;
-            }
-            e.value_ptr.* = 1;
+            // const e = try this.usedMap.getOrPut(name);
+            // if (e.found_existing) {
+            //     return;
+            // }
+            // e.value_ptr.* = 1;
 
             try writer.print("pub const {s} = extern struct {{\n", .{name});
             for (container.fields) |field| {
@@ -227,11 +313,11 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             if (int_enum.values.len == 0) {
                 return;
             }
-            const e = try this.usedMap.getOrPut(name);
-            if (e.found_existing) {
-                return;
-            }
-            e.value_ptr.* = 1;
+            // const e = try this.usedMap.getOrPut(name);
+            // if (e.found_existing) {
+            //     return;
+            // }
+            // e.value_ptr.* = 1;
 
             if (std.mem.endsWith(u8, name, "_")) {
                 for (int_enum.values) |value| {
@@ -255,16 +341,19 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             }
         },
         .function => |function| {
-            const name = function.name.toString();
+            var name_buf: [128]u8 = undefined;
+            var name = function.name.toString();
             const mangling = function.mangling.toString();
             if (std.mem.startsWith(u8, name, "operator ")) {
                 return;
             }
-            const e = try this.usedMap.getOrPut(name);
+            const e = try this.funcUsedMap.getOrPut(name);
             if (e.found_existing) {
-                return;
+                e.value_ptr.* += 1;
+                name = try std.fmt.bufPrint(&name_buf, "{s}_{}", .{ name, e.value_ptr.* });
+            } else {
+                e.value_ptr.* = 1;
             }
-            e.value_ptr.* = 1;
 
             //
             // extern fn {mangling}
@@ -310,7 +399,8 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
                     try writer.print("    {s}: ", .{param.getName()});
                     try _allocPrintDeref(writer, param.type_ref, true);
                     if (param.default) |default| {
-                        try writer.print(" = {s}", .{default});
+                        try writer.writeAll(" = ");
+                        try writerAsZig(param.type_ref, writer, default);
                     } else {
                         try writer.writeAll(" = .{}");
                     }
@@ -390,7 +480,29 @@ fn _allocPrintDeref(writer: *std.Io.Writer, t: cx_declaration.Type, is_param: bo
             if (std.meta.eql(p.type_ref, cx_declaration.Type{ .value = .void })) {
                 try writer.writeAll("?*anyopaque");
             } else {
-                try writer.writeAll("?*");
+                var buf: [128]u8 = undefined;
+                var fbuf = std.heap.FixedBufferAllocator.init(&buf);
+                const fixalloc = fbuf.allocator();
+                var out = std.Io.Writer.Allocating.init(fixalloc);
+                defer out.deinit();
+                try _allocPrintDeref(&out.writer, p.type_ref, is_param);
+                const slice = try out.toOwnedSlice();
+                var is_multi = false;
+                for (multi_object) |name| {
+                    if (std.mem.eql(u8, name, slice)) {
+                        is_multi = true;
+                        break;
+                    }
+                }
+                if (is_multi) {
+                    try writer.writeAll("?[*]");
+                } else {
+                    try writer.writeAll("?*");
+                }
+
+                if (p.is_const) {
+                    try writer.writeAll("const ");
+                }
                 try _allocPrintDeref(writer, p.type_ref, is_param);
             }
         },
@@ -412,7 +524,10 @@ fn _allocPrintDeref(writer: *std.Io.Writer, t: cx_declaration.Type, is_param: bo
             unreachable;
         },
         .named => |named| {
-            const name = named.toString();
+            var name = named.toString();
+            if (std.mem.startsWith(u8, name, "const ")) {
+                name = name[6..];
+            }
             if (std.mem.startsWith(u8, name, "ImVector<")) {
                 try writer.writeAll("ImVector(");
                 const inner_type = name[9 .. name.len - 1];
@@ -448,7 +563,7 @@ fn writeValue(writer: *std.Io.Writer, v: cx_declaration.ValueType) !void {
         .u32 => try writer.writeAll("u32"),
         .u64 => try writer.writeAll("u64"),
         //
-        .i8 => try writer.writeAll("i8"),
+        .i8 => try writer.writeAll("u8"),
         .i16 => try writer.writeAll("i16"),
         .i32 => try writer.writeAll("i32"),
         .i64 => try writer.writeAll("i64"),
@@ -477,7 +592,7 @@ test "pointer" {
         const type_ref = cx_declaration.Type{
             .pointer = try cx_declaration.PointerType.create(allocator, .{
                 .value = .{ .u8 = void{} },
-            }),
+            }, false),
         };
         defer type_ref.destroy(allocator);
         const zig_src = try allocPrintDeref(allocator, type_ref, false);

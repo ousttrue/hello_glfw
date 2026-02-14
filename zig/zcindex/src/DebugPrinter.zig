@@ -3,7 +3,9 @@ const c = @import("cindex");
 const CXCursor = @import("CXCursor.zig");
 const CXString = @import("CXString.zig");
 const CXLocation = @import("CXLocation.zig");
+const cx_declaration = @import("cx_declaration.zig");
 const cx_util = @import("cx_util.zig");
+const MAX_CHILDREN_LEN = 512;
 
 writer: *std.Io.Writer,
 allocator: std.mem.Allocator,
@@ -75,7 +77,7 @@ fn onVisit(
     defer kind.deinit();
 
     return switch (_cursor.kind) {
-        c.CXCursor_StructDecl,
+        // c.CXCursor_StructDecl,
         c.CXCursor_FieldDecl,
         c.CXCursor_UnexposedExpr,
         c.CXCursor_TypedefDecl,
@@ -124,18 +126,31 @@ fn onVisit(
             //     kind.toString(),
             //     pp.toString(),
             // });
-            break :blk c.CXChildVisit_Recurse;
+            break :blk c.CXChildVisit_Continue;
         },
 
-        // c.CXCursor_StructDecl => {
-        //     // clang_Type_getSizeOf not support template class
-        //     try this.writeIndent();
-        //     try this.writer.print("[{s}] {s} {}bytes\n", .{
-        //         kind.toString(),
-        //         spelling.toString(),
-        //         c.clang_Type_getSizeOf(c.clang_getCursorType(_cursor)),
-        //     });
-        // },
+        c.CXCursor_StructDecl => blk: {
+            // clang_Type_getSizeOf not support template class
+            try this.writeIndent();
+
+            var buf: [MAX_CHILDREN_LEN]c.CXCursor = undefined;
+            const children = try cx_util.getChildren(_cursor, &buf);
+            const fields = try cx_declaration.ContainerType.getFields(this.allocator, children);
+            for(fields)|field|{
+                field.type_ref.destroy(this.allocator);
+            }
+            defer this.allocator.free(fields);
+
+            try this.writer.print("[{s}] {s} ({}) {}bytes\n", .{
+                kind.toString(),
+                spelling.toString(),
+                fields.len,
+                c.clang_Type_getSizeOf(c.clang_getCursorType(_cursor)),
+            });
+
+            break :blk c.CXChildVisit_Continue;
+        },
+
         // c.CXCursor_FieldDecl => {
         //     // clang_Type_getSizeOf not support template class
         //     // clang_Cursor_getOffsetOfField not support template class field
@@ -148,15 +163,15 @@ fn onVisit(
         //     });
         // },
         c.CXCursor_FunctionDecl => blk: {
-            try this.writer.print("[{s}] {s}\n", .{
-                kind.toString(),
-                spelling.toString(),
-            });
-            const argc: usize = @intCast(c.clang_Cursor_getNumArguments(_cursor));
-            for (0..argc) |i| {
-                const param = c.clang_Cursor_getArgument(_cursor, @intCast(i));
-                try this.print_param(param);
-            }
+            // try this.writer.print("[{s}] {s}\n", .{
+            //     kind.toString(),
+            //     spelling.toString(),
+            // });
+            // const argc: usize = @intCast(c.clang_Cursor_getNumArguments(_cursor));
+            // for (0..argc) |i| {
+            //     const param = c.clang_Cursor_getArgument(_cursor, @intCast(i));
+            //     try this.print_param(param);
+            // }
             break :blk c.CXChildVisit_Continue;
         },
         // c.CXCursor_ParmDecl => blk: {
@@ -168,7 +183,7 @@ fn onVisit(
             // indent
             try this.writeIndent();
             try this.writer.print("[{s}] {s}\n", .{ kind.toString(), spelling.toString() });
-            break :blk c.CXChildVisit_Recurse;
+            break :blk c.CXChildVisit_Continue;
         },
     };
 }

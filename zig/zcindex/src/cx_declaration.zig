@@ -47,14 +47,17 @@ pub const TypedefType = struct {
 
 pub const PointerType = struct {
     type_ref: Type,
+    is_const: bool,
 
     pub fn create(
         allocator: std.mem.Allocator,
         type_ref: Type,
+        is_const: bool,
     ) !*@This() {
         const this = try allocator.create(@This());
         this.* = .{
             .type_ref = type_ref,
+            .is_const = is_const,
         };
         return this;
     }
@@ -196,7 +199,7 @@ pub const FunctionType = struct {
                             // skip
                         },
                         else => {
-                            std.log.err("{s}: {s}", .{ param_name.toString(), child_kind.toString() });
+                            // std.log.err("{s}: {s}", .{ param_name.toString(), child_kind.toString() });
                             // const cursor_location = CXLocation.init(_cursor);
                             const child_location = CXLocation.init(child);
                             // CXLocation.init(_cursor).end.offset;
@@ -212,15 +215,14 @@ pub const FunctionType = struct {
                             //     src[child_location.start.offset..x],
                             // });
                             var default = src[child_location.start.offset..end_offset];
-                            default = std.mem.trimEnd(u8, default, &std.ascii.whitespace);
+                            default = std.mem.trim(u8, default, &std.ascii.whitespace);
                             if (std.mem.endsWith(u8, default, ",")) {
                                 default = default[0 .. default.len - 1];
                             }
-                            if (std.mem.eql(u8, default, "= NULL")) {
-                                default = "null";
-                            } else if (default[0] == '=') {
+                            if (default[0] == '=') {
                                 default = default[1..];
                             }
+                            default = std.mem.trim(u8, default, &std.ascii.whitespace);
                             this.default = default;
 
                             break;
@@ -305,6 +307,7 @@ pub const FunctionType = struct {
             param.name.deinit();
             param.type_ref.destroy(allocator);
         }
+        allocator.free(this.params);
         this.name.deinit();
         allocator.destroy(this);
     }
@@ -475,11 +478,24 @@ pub const Type = union(enum) {
             c.CXCursor_Namespace,
             c.CXCursor_TypeRef,
             c.CXCursor_UnexposedAttr,
+            c.CXCursor_MemberRef,
+            c.CXCursor_FloatingLiteral,
+            c.CXCursor_CompoundStmt,
+            c.CXCursor_UnexposedExpr,
+            c.CXCursor_DeclRefExpr,
+            c.CXCursor_IntegerLiteral,
+            c.CXCursor_CallExpr,
+            c.CXCursor_UnaryOperator,
+            c.CXCursor_StringLiteral,
+            c.CXCursor_CXXBoolLiteralExpr,
+            c.CXCursor_UnaryExpr,
+            c.CXCursor_BinaryOperator,
+            c.CXCursor_TemplateTypeParameter,
             => null,
             else => {
                 const str = CXString.initFromCursorKind(cursor);
                 defer str.deinit();
-                std.log.warn("cursor.type [{s} = {}]", .{ str.toString(), cursor.kind });
+                std.log.err("cursor.type [{s} = {}]", .{ str.toString(), cursor.kind });
                 @panic("UNKNOWN");
             },
         };
@@ -534,6 +550,7 @@ fn createFromType(allocator: std.mem.Allocator, cx_type: c.CXType) !Type {
             const ptr = try allocator.create(PointerType);
             ptr.* = .{
                 .type_ref = try createFromType(allocator, pointee_type),
+                .is_const = c.clang_isConstQualifiedType(pointee_type) != 0,
             };
             break :blk Type{
                 .pointer = ptr,
@@ -544,6 +561,7 @@ fn createFromType(allocator: std.mem.Allocator, cx_type: c.CXType) !Type {
             const ptr = try allocator.create(PointerType);
             ptr.* = .{
                 .type_ref = try createFromType(allocator, array_type),
+                .is_const = c.clang_isConstQualifiedType(array_type) != 0,
             };
             break :blk Type{
                 .pointer = ptr,

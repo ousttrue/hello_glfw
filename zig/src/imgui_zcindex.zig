@@ -14,7 +14,7 @@ const gl = @import("glad");
 const linmath = @import("linmath.zig");
 const imgui = @import("imgui");
 
-fn T(str: [:0]const u8) *i8 {
+fn T(str: [:0]const u8) [*]u8 {
     return @ptrCast(@constCast(str.ptr));
 }
 
@@ -101,14 +101,14 @@ pub fn main() !void {
     // Setup Dear ImGui context
     // IMGUI_CHECKVERSION();
 
-    _ = imgui.CreateContext(.{ .shared_font_atlas = null });
-    defer imgui.DestroyContext(.{ .ctx = null });
+    _ = imgui.CreateContext(.{});
+    defer imgui.DestroyContext(.{});
     const io = imgui.GetIO().?;
     io.ConfigFlags |= imgui.ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
     io.ConfigFlags |= imgui.ImGuiConfigFlags_NavEnableGamepad; // Enable Gamepad Controls
 
     // Setup Dear ImGui style
-    imgui.StyleColorsDark(.{ .dst = null });
+    imgui.StyleColorsDark(.{});
     //imgui.StyleColorsLight();
 
     // Setup scaling
@@ -181,18 +181,18 @@ pub fn main() !void {
 
         // 2. Show a simple window that we create ourselves. We use a Begin/End pair to create a named window.
         {
-            _ = imgui.Begin(T("Hello, world!"), .{ .p_open = null, .flags = 0 }); // Create a window called "Hello, world!" and append into it.
+            _ = imgui.Begin(T("Hello, world!"), .{}); // Create a window called "Hello, world!" and append into it.
 
             imgui.Text(T("This is some useful text."), .{}); // Display some text (you can use a format strings too)
             _ = imgui.Checkbox(T("Demo Window"), &show_demo_window); // Edit bools storing our window open/close state
             _ = imgui.Checkbox(T("Another Window"), &show_another_window);
 
-            _ = imgui.SliderFloat(T("float"), &f, 0.0, 1.0, .{ .format = null, .flags = 0 }); // Edit 1 float using a slider from 0.0f to 1.0f
-            _ = imgui.ColorEdit3(T("clear color"), .{ .col = &clear_color.x, .flags = 0 }); // Edit 3 floats representing a color
+            _ = imgui.SliderFloat(T("float"), &f, 0.0, 1.0, .{}); // Edit 1 float using a slider from 0.0f to 1.0f
+            _ = imgui.ColorEdit3(T("clear color"), &clear_color.x, .{}); // Edit 3 floats representing a color
 
-            if (imgui.Button(T("Button"), .{ .size = &.{ .x = 0, .y = 0 } })) // Buttons return true when clicked (most widgets return true when edited/activated)
+            if (imgui.Button(T("Button"), .{})) // Buttons return true when clicked (most widgets return true when edited/activated)
                 counter += 1;
-            imgui.SameLine(.{ .offset_from_start_x = 0, .spacing = 0 });
+            imgui.SameLine(.{});
             imgui.Text(T("counter = %d"), .{counter});
             imgui.Text(T("Application average %.3f ms/frame (%.1f FPS)"), .{ 1000.0 / io.Framerate, io.Framerate });
             imgui.End();
@@ -202,9 +202,9 @@ pub fn main() !void {
         if (show_another_window) {
             // Pass a pointer to our bool variable
             // (the window will have a closing button that will clear the bool when clicked)
-            _ = imgui.Begin(T("Another Window"), .{ .p_open = &show_another_window, .flags = 0 });
+            _ = imgui.Begin(T("Another Window"), .{ .p_open = &show_another_window });
             imgui.Text(T("Hello from another window!"), .{});
-            if (imgui.Button(T("Close Me"), .{ .size = &.{ .x = 0, .y = 0 } }))
+            if (imgui.Button(T("Close Me"), .{}))
                 show_another_window = false;
             imgui.End();
         }
