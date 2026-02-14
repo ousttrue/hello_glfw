@@ -24,6 +24,12 @@ const samples = [_]Sample{
         .root_source_file = "src/imgui_zcindex.zig",
         .use_imgui = true,
     },
+    .{
+        .name = "glfw_imgui_clang_sokol",
+        .root_source_file = "src/imgui_zcindex_sokol.zig",
+        .use_imgui = true,
+        .use_sokol = true,
+    },
 };
 
 pub fn build(b: *std.Build) !void {
