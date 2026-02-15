@@ -1,37 +1,41 @@
-# simple
+# samples
+
+## simple
 
 https://www.glfw.org/docs/latest/quick_guide.html#quick_example
 
-# sokol
+## sokol
 
 https://github.com/floooh/sokol-samples/blob/master/glfw/triangle-glfw.c
 
 > without sapp.
 
-# imgui
+## imgui
 
 https://github.com/ocornut/imgui/blob/master/examples/example_glfw_opengl3/main.cpp
 
-## zcindex
+### zcindex
 
 [zcindex](./zcindex) is code generator by libclang.
 
 > directly use mangling imgui.
 > extern fn \_ZN5ImGui13CreateContextEP11ImFontAtlas(shared_font_atlas: ?*ImFontAtlas) ?*ImGuiContext;
 
-# sokol + imgui
+## sokol + imgui
 
 https://github.com/ocornut/imgui/blob/master/examples/example_glfw_opengl3/main.cpp
 
-> graphics backend to sokol
+> without sapp.
+> imgui graphics backend use sokol.
 
-## sokol_imgui mod
+```cpp
+// sokol_imgui.cpp
+#define SOKOL_IMGUI_NO_SOKOL_APP
+#define SOKOL_IMGUI_IMPL
+#define SOKOL_GLCORE
+#include <sokol_gfx.h>
+#include <imgui.h>
+#include <sokol_imgui.h>
+```
 
-https://github.com/floooh/sokol-zig/blob/master/src/sokol/c/sokol_imgui.h
-
-- sapp => glfw
-- cimgui => mangling-imgui (zcindex)
-  - `ImGui_ImplSokol_Init`
-  - `ImGui_ImplSokol_Shutdown`
-  - `ImGui_ImplSokol_NewFrame`
-  - `ImGui_ImplSokol_RenderDrawData`
+- [imgui_sokol.zig](src/imgui_sokol.zig)

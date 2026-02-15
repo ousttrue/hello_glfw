@@ -138,15 +138,6 @@ pub fn main() !void {
     //     style.ScaleAllSizes(main_scale);        // Bake a fixed style scale. (until we have a solution for dynamic style scaling, changing this requires resetting Style + calling this again)
     //     style.FontScaleDpi = main_scale;        // Set initial font scale. (using io.ConfigDpiScaleFonts=true makes this unnecessary. We leave both here for documentation purpose)
 
-    // Setup Platform/Renderer backends
-    _ = imgui.ImGui_ImplGlfw_InitForOpenGL(window, true);
-    defer imgui.ImGui_ImplGlfw_Shutdown();
-    // #ifdef __EMSCRIPTEN__
-    //     ImGui_ImplGlfw_InstallEmscriptenCallbacks(window, "#canvas");
-    // #endif
-    _ = imgui_sokol.ImGui_ImplSokol_Init(.{});
-    defer imgui_sokol.ImGui_ImplSokol_Shutdown();
-
     // Load Fonts
     // - If no fonts are loaded, dear imgui will use the default font. You can also load multiple fonts and use imgui.PushFont()/PopFont() to select them.
     // - AddFontFromFileTTF() will return the ImFont* so you can store it if you need to select the font among multiple.
@@ -172,6 +163,12 @@ pub fn main() !void {
             .func = sokol.log.func,
         },
     });
+
+    // Setup Platform/Renderer backends
+    _ = imgui.ImGui_ImplGlfw_InitForOpenGL(window, true);
+    defer imgui.ImGui_ImplGlfw_Shutdown();
+    _ = imgui_sokol.ImGui_ImplSokol_Init(&.{});
+    defer imgui_sokol.ImGui_ImplSokol_Shutdown();
 
     // a vertex buffer
     const vertices = [_]f32{
@@ -244,17 +241,9 @@ pub fn main() !void {
         }
 
         // Start the Dear ImGui frame
-        imgui_sokol.ImGui_ImplSokol_NewFrame();
+        // imgui_sokol.ImGui_ImplSokol_NewFrame();
         imgui.ImGui_ImplGlfw_NewFrame();
         imgui.NewFrame();
-
-        const sc: *const sokol.gfx.Swapchain = @ptrCast(&glfw_swapchain(window, opts));
-        sokol.gfx.beginPass(.{ .swapchain = sc.* });
-        sokol.gfx.applyPipeline(pip);
-        sokol.gfx.applyBindings(bind);
-        sokol.gfx.draw(0, 3, 1);
-        sokol.gfx.endPass();
-        sokol.gfx.commit();
 
         // 1. Show the big demo window (Most of the sample code is in imgui.ShowDemoWindow()! You can browse its code to learn more about Dear ImGui!).
         if (show_demo_window)
@@ -292,13 +281,23 @@ pub fn main() !void {
 
         // Rendering
         imgui.Render();
+
         var display_w: c_int = undefined;
         var display_h: c_int = undefined;
         glfw.glfwGetFramebufferSize(window, &display_w, &display_h);
         gl.glViewport(0, 0, display_w, display_h);
         gl.glClearColor(clear_color.x * clear_color.w, clear_color.y * clear_color.w, clear_color.z * clear_color.w, clear_color.w);
         gl.glClear(gl.GL_COLOR_BUFFER_BIT);
+
+        const sc: *const sokol.gfx.Swapchain = @ptrCast(&glfw_swapchain(window, opts));
+        sokol.gfx.beginPass(.{ .swapchain = sc.* });
+        sokol.gfx.applyPipeline(pip);
+        sokol.gfx.applyBindings(bind);
+        sokol.gfx.draw(0, 3, 1);
+
         imgui_sokol.ImGui_ImplSokol_RenderDrawData(imgui.GetDrawData());
+        sokol.gfx.endPass();
+        sokol.gfx.commit();
 
         glfw.glfwSwapBuffers(window);
     }

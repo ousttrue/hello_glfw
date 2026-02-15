@@ -192,6 +192,12 @@ fn build_sample(
         exe.linkSystemLibrary("X11");
 
         exe.addIncludePath(imgui_dep.path(""));
+
+        if (sample.use_sokol) {
+            exe.addCSourceFile(.{
+                .file = b.path("src/sokol_imgui.cpp"),
+            });
+        }
     }
 
     return exe;
