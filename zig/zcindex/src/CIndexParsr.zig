@@ -20,8 +20,8 @@ allocator: std.mem.Allocator,
 entry_point: [:0]const u8,
 /// for multi headers
 unsaved_file: ?c.CXUnsavedFile = null,
-command_line: std.ArrayList([*:0]const u8) = .{},
-include_dirs: std.ArrayList([]const u8) = .{},
+command_line: std.ArrayList([*:0]const u8) = .initBuffer(&.{}),
+include_dirs: std.ArrayList([]const u8) = .initBuffer(&.{}),
 
 flags: u32 =
     c.CXTranslationUnit_DetailedPreprocessingRecord |
@@ -49,22 +49,23 @@ pub fn deinit(this: *@This()) void {
     this.include_dirs.deinit(this.allocator);
 }
 
-fn allocFullpathDir(allocator: std.mem.Allocator, src: [*:0]const u8) ![]const u8 {
+fn allocFullpathDir(io: std.Io, allocator: std.mem.Allocator, src: [:0]const u8) ![]const u8 {
     var realpath_buf: [1024]u8 = undefined;
-    const realpath = try std.fs.cwd().realpathZ(src, &realpath_buf);
-    const dir = std.fs.path.dirname(realpath).?;
+    const size = try std.Io.Dir.cwd().realPathFile(io, src, &realpath_buf);
+    const dir = std.fs.path.dirname(realpath_buf[0..size]).?;
     return try allocator.dupe(u8, dir);
 }
 
 pub fn fromSingleHeader(
+    io: std.Io,
     allocator: std.mem.Allocator,
-    header: [*:0]const u8,
+    header: [:0]const u8,
 ) !@This() {
     var this = try @This().init(allocator);
 
-    this.entry_point = std.mem.span(header);
+    this.entry_point = header;
 
-    const copy = try allocFullpathDir(allocator, header);
+    const copy = try allocFullpathDir(io, allocator, header);
     try this.include_dirs.append(allocator, copy);
 
     return this;
@@ -72,8 +73,9 @@ pub fn fromSingleHeader(
 
 /// Create a CXUnsavedFile that combines multiple #include headers
 pub fn fromMultiHeadr(
+    io: std.Io,
     allocator: std.mem.Allocator,
-    headers: []const [*:0]const u8,
+    headers: []const [:0]const u8,
 ) !@This() {
     var this = try @This().init(allocator);
 
@@ -81,17 +83,17 @@ pub fn fromMultiHeadr(
     var out = std.Io.Writer.Allocating.init(allocator);
     defer out.deinit();
     for (headers) |header| {
-        const span: []const u8 = std.mem.span(header);
+        const span: []const u8 = header;
         try out.writer.print("#include \"{s}\"\n", .{span});
 
-        const copy = try allocFullpathDir(allocator, header);
+        const copy = try allocFullpathDir(io, allocator, header);
         try this.include_dirs.append(allocator, copy);
     }
     const contents = try out.toOwnedSlice();
     this.entry_point = "__UNSAVED_FILE__.h";
     this.unsaved_file = .{
         .Contents = &contents[0],
-        .Length = contents.len,
+        .Length = @intCast(contents.len),
         .Filename = this.entry_point,
     };
 
@@ -116,7 +118,7 @@ pub fn fromContents(
     this.entry_point = "__UNSAVED_FILE__.h";
     this.unsaved_file = .{
         .Contents = &contents[0],
-        .Length = contents.len,
+        .Length = @intCast(contents.len),
         .Filename = this.entry_point,
     };
 

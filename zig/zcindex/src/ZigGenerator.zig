@@ -44,6 +44,7 @@ const c_to_zig = std.StaticStringMap([]const u8).initComptime(&.{
     .{ "float", "f32" },
 });
 
+io: std.Io,
 allocator: std.mem.Allocator,
 src_map: std.StringHashMap([]const u8),
 writer: *std.Io.Writer,
@@ -52,6 +53,7 @@ include_dirs: []const []const u8,
 funcUsedMap: std.StringHashMap(u32),
 
 pub fn init(
+    io: std.Io,
     allocator: std.mem.Allocator,
     writer: *std.Io.Writer,
     entry_point: []const u8,
@@ -87,6 +89,7 @@ pub fn init(
     ) catch unreachable;
 
     return .{
+        .io = io,
         .allocator = allocator,
         .src_map = .init(allocator),
         .writer = writer,
@@ -130,7 +133,7 @@ fn onVisit(
     }
     // try this.cursors.append(this.allocator, cursor);
 
-    if (try cx_declaration.Type.createFromCursor(this.allocator, &this.src_map, _cursor)) |decl| {
+    if (try cx_declaration.Type.createFromCursor(this.io, this.allocator, &this.src_map, _cursor)) |decl| {
         defer decl.destroy(this.allocator);
         const zig_src = try allocPrintDecl(this, this.allocator, decl, false);
         defer this.allocator.free(zig_src);
@@ -157,7 +160,7 @@ pub fn allocPrintDecl(this: *@This(), allocator: std.mem.Allocator, t: cx_declar
 
 // -360.0f
 // +360.0f
-fn writerAsZig(t: cx_declaration.Type, writer: *std.io.Writer, c_expression: []const u8) !void {
+fn writerAsZig(t: cx_declaration.Type, writer: *std.Io.Writer, c_expression: []const u8) !void {
     switch (t) {
         .value => |v| {
             switch (v) {
@@ -341,7 +344,7 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             }
         },
         .function => |function| {
-            var name_buf: [128]u8 = undefined;
+            var name_buf: [1024]u8 = undefined;
             var name = function.name.toString();
             const mangling = function.mangling.toString();
             if (std.mem.startsWith(u8, name, "operator ")) {
@@ -480,7 +483,7 @@ fn _allocPrintDeref(writer: *std.Io.Writer, t: cx_declaration.Type, is_param: bo
             if (std.meta.eql(p.type_ref, cx_declaration.Type{ .value = .void })) {
                 try writer.writeAll("?*anyopaque");
             } else {
-                var buf: [128]u8 = undefined;
+                var buf: [1024]u8 = undefined;
                 var fbuf = std.heap.FixedBufferAllocator.init(&buf);
                 const fixalloc = fbuf.allocator();
                 var out = std.Io.Writer.Allocating.init(fixalloc);
@@ -578,7 +581,7 @@ test "value" {
 
     {
         const zig_src = try allocPrintDeref(allocator, .{
-            .value = .{ .u8 = void{} },
+            .value = .{ .u8 = undefined },
         }, false);
         defer allocator.free(zig_src);
         try std.testing.expectEqualSlices(u8, "u8", zig_src);
@@ -591,7 +594,7 @@ test "pointer" {
     {
         const type_ref = cx_declaration.Type{
             .pointer = try cx_declaration.PointerType.create(allocator, .{
-                .value = .{ .u8 = void{} },
+                .value = .{ .u8 = undefined },
             }, false),
         };
         defer type_ref.destroy(allocator);

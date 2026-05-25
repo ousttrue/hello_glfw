@@ -172,6 +172,7 @@ pub const FunctionType = struct {
         default: ?[]const u8 = null,
 
         fn init(
+            io: std.Io,
             allocator: std.mem.Allocator,
             src_map: *std.StringHashMap([]const u8),
             param: c.CXCursor,
@@ -191,7 +192,7 @@ pub const FunctionType = struct {
                     defer child_kind.deinit();
                     const child_pp = CXString.initFromCursorDisplayName(child);
                     defer child_pp.deinit();
-                    const src = try getSource(allocator, src_map, child);
+                    const src = try getSource(io, allocator, src_map, child);
                     switch (child.kind) {
                         c.CXCursor_TypeRef,
                         c.CXCursor_ParmDecl,
@@ -246,18 +247,18 @@ pub const FunctionType = struct {
             return name;
         }
 
-        fn getSource(allocator: std.mem.Allocator, src_map: *std.StringHashMap([]const u8), cursor: c.CXCursor) ![]const u8 {
+        fn getSource(io: std.Io, allocator: std.mem.Allocator, src_map: *std.StringHashMap([]const u8), cursor: c.CXCursor) ![]const u8 {
             const file = CXString.initFromCursorFilepath(cursor);
             defer file.deinit();
             const path = file.toString();
             if (src_map.get(path)) |src| {
                 return src;
             } else {
-                const src = try std.fs.cwd().readFileAllocOptions(
-                    allocator,
+                const src = try std.Io.Dir.cwd().readFileAllocOptions(
+                    io,
                     path,
-                    std.math.maxInt(u32),
-                    null,
+                    allocator,
+                    .unlimited,
                     .@"1",
                     null,
                 );
@@ -274,6 +275,7 @@ pub const FunctionType = struct {
     is_variadic: bool,
 
     pub fn create(
+        io: std.Io,
         allocator: std.mem.Allocator,
         cursor: c.CXCursor,
         src_map: *std.StringHashMap([]const u8),
@@ -296,7 +298,7 @@ pub const FunctionType = struct {
                 CXLocation.init(params[i + 1]).start.offset
             else
                 CXLocation.init(cursor).end.offset - 1;
-            this.params[i] = try Param.init(allocator, src_map, param, end_offset);
+            this.params[i] = try Param.init(io, allocator, src_map, param, end_offset);
         }
         return this;
     }
@@ -379,6 +381,7 @@ pub const Type = union(enum) {
     named: CXString,
 
     pub fn createFromCursor(
+        io: std.Io,
         allocator: std.mem.Allocator,
         src_map: *std.StringHashMap([]const u8),
         cursor: c.CXCursor,
@@ -451,6 +454,7 @@ pub const Type = union(enum) {
                 }
                 break :blk .{
                     .function = try FunctionType.create(
+                        io,
                         allocator,
                         cursor,
                         src_map,

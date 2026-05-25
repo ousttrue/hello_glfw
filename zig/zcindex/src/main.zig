@@ -10,47 +10,43 @@ const cx_declaration = @import("cx_declaration.zig");
 const DebugPrinter = @import("DebugPrinter.zig");
 const SizePrinter = @import("SizePrinter.zig");
 
-fn usage(writer: *std.Io.Writer) !void {
+fn usage(argv: []const [:0]const u8, writer: *std.Io.Writer) !void {
     try writer.print(
         \\ usage: {s} {{zig|debug|size_h|size_cpp}} c_headers....
         \\     ex. zcindex zig imgui.h
         \\
-    , .{std.mem.span(std.os.argv[0])});
+    , .{argv[0]});
 }
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     var writer_buf: [1024]u8 = undefined;
-    var writer = std.fs.File.stdout().writer(&writer_buf);
+    var writer = std.Io.File.stdout().writer(init.io, &writer_buf);
     defer writer.interface.flush() catch @panic("OOM");
-
-    if (std.os.argv.len >= 3) {
-        const cmd: []const u8 = std.mem.span(std.os.argv[1]);
+    const argv = try init.minimal.args.toSlice(init.arena.allocator());
+    if (argv.len >= 3) {
+        const cmd: []const u8 = argv[1];
         if (std.mem.eql(u8, cmd, "zig")) {
-            try main_zig(std.os.argv[2..], &writer.interface);
+            try main_zig(init.io, init.gpa, argv[2..], &writer.interface);
         } else if (std.mem.eql(u8, cmd, "debug")) {
-            try main_debug(std.os.argv[2..], &writer.interface);
+            try main_debug(init.io, init.gpa, argv[2..], &writer.interface);
         } else if (std.mem.eql(u8, cmd, "size_h")) {
             // extern "C"
-            try main_size(std.os.argv[2..], &writer.interface, false);
+            try main_size(init.io, init.gpa, argv[2..], &writer.interface, false);
         } else if (std.mem.eql(u8, cmd, "size_cpp")) {
             // impl
-            try main_size(std.os.argv[2..], &writer.interface, true);
+            try main_size(init.io, init.gpa, argv[2..], &writer.interface, true);
         }
         return;
     }
 
-    try usage(&writer.interface);
+    try usage(argv, &writer.interface);
 }
 
-fn main_size(argv: []const [*:0]const u8, writer: *std.Io.Writer, impl: bool) !void {
-    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
-    defer _ = gpa.detectLeaks();
-    const allocator = gpa.allocator();
-
+fn main_size(io: std.Io, allocator: std.mem.Allocator, argv: []const [:0]const u8, writer: *std.Io.Writer, impl: bool) !void {
     var cindex_parser = if (argv.len == 1)
-        try CIndexParser.fromSingleHeader(allocator, argv[0])
+        try CIndexParser.fromSingleHeader(io, allocator, argv[0])
     else
-        try CIndexParser.fromMultiHeadr(allocator, argv);
+        try CIndexParser.fromMultiHeadr(io, allocator, argv);
     defer cindex_parser.deinit();
 
     const tu = try cindex_parser.parse();
@@ -72,15 +68,11 @@ fn main_size(argv: []const [*:0]const u8, writer: *std.Io.Writer, impl: bool) !v
     );
 }
 
-fn main_debug(argv: []const [*:0]const u8, writer: *std.Io.Writer) !void {
-    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
-    defer _ = gpa.detectLeaks();
-    const allocator = gpa.allocator();
-
+fn main_debug(io: std.Io, allocator: std.mem.Allocator, argv: []const [:0]const u8, writer: *std.Io.Writer) !void {
     var cindex_parser = if (argv.len == 1)
-        try CIndexParser.fromSingleHeader(allocator, argv[0])
+        try CIndexParser.fromSingleHeader(io, allocator, argv[0])
     else
-        try CIndexParser.fromMultiHeadr(allocator, argv);
+        try CIndexParser.fromMultiHeadr(io, allocator, argv);
     defer cindex_parser.deinit();
 
     const tu = try cindex_parser.parse();
@@ -101,21 +93,18 @@ fn main_debug(argv: []const [*:0]const u8, writer: *std.Io.Writer) !void {
     );
 }
 
-fn main_zig(argv: []const [*:0]const u8, writer: *std.Io.Writer) !void {
-    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
-    defer _ = gpa.detectLeaks();
-    const allocator = gpa.allocator();
-
+fn main_zig(io: std.Io, allocator: std.mem.Allocator, argv: []const [:0]const u8, writer: *std.Io.Writer) !void {
     var cindex_parser = if (argv.len == 1)
-        try CIndexParser.fromSingleHeader(allocator, argv[0])
+        try CIndexParser.fromSingleHeader(io, allocator, argv[0])
     else
-        try CIndexParser.fromMultiHeadr(allocator, argv);
+        try CIndexParser.fromMultiHeadr(io, allocator, argv);
     defer cindex_parser.deinit();
 
     const tu = try cindex_parser.parse();
     defer c.clang_disposeTranslationUnit(tu);
 
     var g = ZigGenerator.init(
+        io,
         allocator,
         writer,
         cindex_parser.entry_point,
