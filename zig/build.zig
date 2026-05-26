@@ -14,11 +14,11 @@ const samples = [_]Sample{
         .name = "glfw_triangle",
         .root_source_file = "src/simple.zig",
     },
-    // .{
-    //     .name = "sokol_glfw_triangle",
-    //     .root_source_file = "src/sokol.zig",
-    //     .use_sokol = true,
-    // },
+    .{
+        .name = "sokol_glfw_triangle",
+        .root_source_file = "src/sokol.zig",
+        .use_sokol = true,
+    },
     // .{
     //     .name = "glfw_imgui_clang",
     //     .root_source_file = "src/imgui_zcindex.zig",
@@ -39,6 +39,7 @@ pub fn build(b: *std.Build) !void {
     const sokol_dep = b.dependency("sokol", .{
         .target = target,
         .optimize = optimize,
+        .gl = true,
     });
 
     const imgui_dep = b.dependency("imgui", .{
@@ -114,7 +115,7 @@ pub fn build(b: *std.Build) !void {
 
     // if (b.option(bool, "samples", "samples") orelse false) {
     for (samples) |sample| {
-        const exe = try build_sample(b, target, optimize, sample, sokol_dep, imgui_dep);
+        const exe = try build_sample(b, target, optimize, sample, sokol_dep, imgui_dep, glfw_lib.getEmittedIncludeTree());
         const mod = exe.root_module;
 
         mod.addImport("glfw", glfw_lib.root_module);
@@ -148,6 +149,7 @@ fn build_sample(
     sample: Sample,
     sokol_dep: *std.Build.Dependency,
     imgui_dep: *std.Build.Dependency,
+    glfw_include: std.Build.LazyPath,
 ) !*std.Build.Step.Compile {
     const mod = b.addModule(sample.name, .{
         .target = target,
@@ -170,6 +172,7 @@ fn build_sample(
             .root_source_file = b.path("src/glfw_glue.h"),
         });
         t.addIncludePath(sokol_dep.path("src/sokol/c"));
+        mod.addIncludePath(glfw_include);
         mod.addImport("glfw", t.createModule());
 
         mod.addCSourceFiles(.{
@@ -196,8 +199,7 @@ fn build_sample(
             },
             .flags = &.{},
         });
-        if (target.result.os.tag == .windows) {
-        } else {
+        if (target.result.os.tag == .windows) {} else {
             mod.linkSystemLibrary("X11", .{});
         }
 

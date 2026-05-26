@@ -137,5 +137,6 @@ pub fn build(
         mod.addIncludePath(lib.getEmittedIncludeTree());
     }
 
+    lib.installHeadersDirectory(glfw_dep.path("include"), "", .{});
     return lib;
 }
