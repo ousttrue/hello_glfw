@@ -19,21 +19,22 @@ const samples = [_]Sample{
         .root_source_file = "src/sokol.zig",
         .use_sokol = true,
     },
-    // .{
-    //     .name = "glfw_imgui_clang",
-    //     .root_source_file = "src/imgui_zcindex.zig",
-    //     .use_imgui = true,
-    // },
-    // .{
-    //     .name = "glfw_imgui_clang_sokol",
-    //     .root_source_file = "src/imgui_zcindex_sokol.zig",
-    //     .use_imgui = true,
-    //     .use_sokol = true,
-    // },
+    .{
+        .name = "glfw_imgui_clang",
+        .root_source_file = "src/imgui_zcindex.zig",
+        .use_imgui = true,
+    },
+    .{
+        .name = "glfw_imgui_clang_sokol",
+        .root_source_file = "src/imgui_zcindex_sokol.zig",
+        .use_imgui = true,
+        .use_sokol = true,
+    },
 };
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
+    std.debug.print("target => {s}", .{try target.result.linuxTriple(b.allocator)});
     const optimize = b.standardOptimizeOption(.{});
 
     const sokol_dep = b.dependency("sokol", .{
@@ -113,9 +114,39 @@ pub fn build(b: *std.Build) !void {
     const glad_lib = try build_glad.build(b, target, optimize, glfw_dep);
     imgui_mod.addImport("glfw", glfw_lib.root_module);
 
+    imgui_mod.addCSourceFiles(.{
+        .root = imgui_dep.path(""),
+        .files = &.{
+            "imgui.cpp",
+            "imgui_demo.cpp",
+            "imgui_draw.cpp",
+            "imgui_tables.cpp",
+            "imgui_widgets.cpp",
+            //
+            "backends/imgui_impl_glfw.cpp",
+            "backends/imgui_impl_opengl3.cpp",
+        },
+        .flags = &.{},
+    });
+    if (target.result.os.tag == .windows) {} else {
+        imgui_mod.linkSystemLibrary("X11", .{});
+    }
+
+    imgui_mod.addIncludePath(imgui_dep.path(""));
+    imgui_mod.addIncludePath(glfw_lib.getEmittedIncludeTree());
+
+    // if (sample.use_sokol) {
+    imgui_mod.addCSourceFile(.{
+        .file = b.path("src/sokol_imgui.cpp"),
+    });
+    // }
+    imgui_mod.addIncludePath(sokol_dep.path("src/sokol/c"));
+    // imgui_mod.linkLibrary();
+    imgui_mod.addImport("sokol", sokol_dep.module("sokol"));
+
     // if (b.option(bool, "samples", "samples") orelse false) {
     for (samples) |sample| {
-        const exe = try build_sample(b, target, optimize, sample, sokol_dep, imgui_dep, glfw_lib.getEmittedIncludeTree());
+        const exe = try build_sample(b, target, optimize, sample, sokol_dep, glfw_lib.getEmittedIncludeTree());
         const mod = exe.root_module;
 
         mod.addImport("glfw", glfw_lib.root_module);
@@ -148,7 +179,7 @@ fn build_sample(
     optimize: std.builtin.OptimizeMode,
     sample: Sample,
     sokol_dep: *std.Build.Dependency,
-    imgui_dep: *std.Build.Dependency,
+    // imgui_dep: *std.Build.Dependency,
     glfw_include: std.Build.LazyPath,
 ) !*std.Build.Step.Compile {
     const mod = b.addModule(sample.name, .{
@@ -184,33 +215,8 @@ fn build_sample(
         mod.addImport("sokol", sokol_dep.module("sokol"));
     }
 
-    if (sample.use_imgui) {
-        mod.addCSourceFiles(.{
-            .root = imgui_dep.path(""),
-            .files = &.{
-                "imgui.cpp",
-                "imgui_demo.cpp",
-                "imgui_draw.cpp",
-                "imgui_tables.cpp",
-                "imgui_widgets.cpp",
-                //
-                "backends/imgui_impl_glfw.cpp",
-                "backends/imgui_impl_opengl3.cpp",
-            },
-            .flags = &.{},
-        });
-        if (target.result.os.tag == .windows) {} else {
-            mod.linkSystemLibrary("X11", .{});
-        }
-
-        mod.addIncludePath(imgui_dep.path(""));
-
-        if (sample.use_sokol) {
-            mod.addCSourceFile(.{
-                .file = b.path("src/sokol_imgui.cpp"),
-            });
-        }
-    }
+    // if (sample.use_imgui) {
+    // }
 
     return exe;
 }

@@ -5,6 +5,10 @@ const DEFAULT_ARGS = [_][*:0]const u8{
     "-x",
     "c++",
     "-std=c++17",
+    // "--driver-mode=cpp",
+    // "-fc++-abi=itanium",
+    // "-fclang-abi-compat=17",
+    "--target=x86_64-windows-gnu",
 };
 
 const MSVC_ARGS = [_][*:0]const u8{
