@@ -11,16 +11,17 @@ pub fn build(
         .target = target,
         .optimize = optimize,
     });
+    const mod = t.createModule();
     const lib = b.addLibrary(.{
         .name = "glad",
-        .root_module = t.createModule(),
+        .root_module = mod,
     });
 
     // glad
-    lib.addCSourceFile(.{
+    mod.addCSourceFile(.{
         .file = b.path("src/glad_impl.c"),
     });
-    lib.addIncludePath(glfw_dep.path("deps"));
+    mod.addIncludePath(glfw_dep.path("deps"));
 
     return lib;
 }

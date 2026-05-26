@@ -14,22 +14,22 @@ const samples = [_]Sample{
         .name = "glfw_triangle",
         .root_source_file = "src/simple.zig",
     },
-    .{
-        .name = "sokol_glfw_triangle",
-        .root_source_file = "src/sokol.zig",
-        .use_sokol = true,
-    },
-    .{
-        .name = "glfw_imgui_clang",
-        .root_source_file = "src/imgui_zcindex.zig",
-        .use_imgui = true,
-    },
-    .{
-        .name = "glfw_imgui_clang_sokol",
-        .root_source_file = "src/imgui_zcindex_sokol.zig",
-        .use_imgui = true,
-        .use_sokol = true,
-    },
+    // .{
+    //     .name = "sokol_glfw_triangle",
+    //     .root_source_file = "src/sokol.zig",
+    //     .use_sokol = true,
+    // },
+    // .{
+    //     .name = "glfw_imgui_clang",
+    //     .root_source_file = "src/imgui_zcindex.zig",
+    //     .use_imgui = true,
+    // },
+    // .{
+    //     .name = "glfw_imgui_clang_sokol",
+    //     .root_source_file = "src/imgui_zcindex_sokol.zig",
+    //     .use_imgui = true,
+    //     .use_sokol = true,
+    // },
 };
 
 pub fn build(b: *std.Build) !void {
@@ -58,7 +58,7 @@ pub fn build(b: *std.Build) !void {
         zcindex_run.addFileArg(imgui_dep.path("imgui.h"));
         zcindex_run.addFileArg(imgui_dep.path("backends/imgui_impl_glfw.h"));
         zcindex_run.addFileArg(imgui_dep.path("backends/imgui_impl_opengl3.h"));
-        const imgui_mod_src = zcindex_run.captureStdOut();
+        const imgui_mod_src = zcindex_run.captureStdOut(.{});
         const imgui_src_install = b.addInstallFile(imgui_mod_src, "src/imgui.zig");
         installs[0] = imgui_src_install;
         b.getInstallStep().dependOn(&imgui_src_install.step);
@@ -69,7 +69,7 @@ pub fn build(b: *std.Build) !void {
         zcindex_run.addFileArg(imgui_dep.path("imgui.h"));
         zcindex_run.addFileArg(imgui_dep.path("backends/imgui_impl_glfw.h"));
         zcindex_run.addFileArg(imgui_dep.path("backends/imgui_impl_opengl3.h"));
-        const imgui_mod_src = zcindex_run.captureStdOut();
+        const imgui_mod_src = zcindex_run.captureStdOut(.{});
         const imgui_src_install = b.addInstallFile(imgui_mod_src, "src/size_offset.h");
         installs[1] = imgui_src_install;
         b.getInstallStep().dependOn(&imgui_src_install.step);
@@ -80,7 +80,7 @@ pub fn build(b: *std.Build) !void {
         zcindex_run.addFileArg(imgui_dep.path("imgui.h"));
         zcindex_run.addFileArg(imgui_dep.path("backends/imgui_impl_glfw.h"));
         zcindex_run.addFileArg(imgui_dep.path("backends/imgui_impl_opengl3.h"));
-        const imgui_mod_src = zcindex_run.captureStdOut();
+        const imgui_mod_src = zcindex_run.captureStdOut(.{});
         const imgui_src_install = b.addInstallFile(imgui_mod_src, "src/size_offset.cpp");
         installs[2] = imgui_src_install;
         b.getInstallStep().dependOn(&imgui_src_install.step);
@@ -99,6 +99,14 @@ pub fn build(b: *std.Build) !void {
         .file = b.path("zig-out/src/size_offset.cpp"),
     });
 
+    const size_offset_tc = b.addTranslateC(.{
+        .target = target,
+        .optimize = optimize,
+        .root_source_file = b.path("zig-out/src/size_offset.h"),
+    });
+    const size_offset_mod = size_offset_tc.createModule();
+    imgui_mod.addImport("c", size_offset_mod);
+
     const glfw_dep = b.dependency("glfw", .{});
     const glfw_lib = try build_glfw.build(b, target, optimize, glfw_dep);
     const glad_lib = try build_glad.build(b, target, optimize, glfw_dep);
@@ -107,12 +115,11 @@ pub fn build(b: *std.Build) !void {
     // if (b.option(bool, "samples", "samples") orelse false) {
     for (samples) |sample| {
         const exe = try build_sample(b, target, optimize, sample, sokol_dep, imgui_dep);
+        const mod = exe.root_module;
 
-        exe.linkLibrary(glfw_lib);
-        exe.root_module.addImport("glfw", glfw_lib.root_module);
-        exe.linkLibrary(glad_lib);
-        exe.root_module.addImport("glad", glad_lib.root_module);
-        exe.addIncludePath(b.path("src"));
+        mod.addImport("glfw", glfw_lib.root_module);
+        mod.addImport("glad", glad_lib.root_module);
+        mod.addIncludePath(b.path("src"));
 
         // if (sample.use_imgui) {
         exe.root_module.addImport("imgui", imgui_mod);
@@ -165,17 +172,17 @@ fn build_sample(
         t.addIncludePath(sokol_dep.path("src/sokol/c"));
         mod.addImport("glfw", t.createModule());
 
-        exe.addCSourceFiles(.{
+        mod.addCSourceFiles(.{
             .root = b.path("src"),
             .files = &.{"glfw_glue.c"},
         });
-        exe.addIncludePath(sokol_dep.path("src/sokol/c"));
+        mod.addIncludePath(sokol_dep.path("src/sokol/c"));
 
         mod.addImport("sokol", sokol_dep.module("sokol"));
     }
 
     if (sample.use_imgui) {
-        exe.addCSourceFiles(.{
+        mod.addCSourceFiles(.{
             .root = imgui_dep.path(""),
             .files = &.{
                 "imgui.cpp",
@@ -189,12 +196,15 @@ fn build_sample(
             },
             .flags = &.{},
         });
-        exe.linkSystemLibrary("X11");
+        if (target.result.os.tag == .windows) {
+        } else {
+            mod.linkSystemLibrary("X11", .{});
+        }
 
-        exe.addIncludePath(imgui_dep.path(""));
+        mod.addIncludePath(imgui_dep.path(""));
 
         if (sample.use_sokol) {
-            exe.addCSourceFile(.{
+            mod.addCSourceFile(.{
                 .file = b.path("src/sokol_imgui.cpp"),
             });
         }

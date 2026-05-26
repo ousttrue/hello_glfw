@@ -42,6 +42,7 @@ const multi_object = [_][]const u8{
 const c_to_zig = std.StaticStringMap([]const u8).initComptime(&.{
     .{ "char", "u8" },
     .{ "float", "f32" },
+    .{ "size_t", "usize" },
 });
 
 io: std.Io,
@@ -65,9 +66,7 @@ pub fn init(
         \\const GLFWwindow = glfw.GLFWwindow;
         \\const GLFWmonitor = glfw.GLFWmonitor;
         \\
-        \\pub const c = @cImport({
-        \\    @cInclude("size_offset.h");
-        \\});
+        \\pub const c = @import("c");
         \\
         \\pub fn ImVector(T: type) type {
         \\    return extern struct {
@@ -361,7 +360,7 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             //
             // extern fn {mangling}
             //
-            try writer.print("extern fn {s}(", .{mangling});
+            try writer.print("extern fn @\"{s}\"(", .{mangling});
             for (function.params, 0..) |param, i| {
                 if (i > 0) {
                     try writer.writeAll(", ");
@@ -458,7 +457,7 @@ fn _allocPrintDecl(this: *@This(), writer: *std.Io.Writer, t: cx_declaration.Typ
             }
             try writer.writeAll(";\n");
 
-            try writer.print("    return @call(.auto, {s}, __args__);\n", .{mangling});
+            try writer.print("    return @call(.auto, @\"{s}\", __args__);\n", .{mangling});
             try writer.writeAll("}\n");
         },
         .named => {
@@ -546,6 +545,10 @@ fn _allocPrintDeref(writer: *std.Io.Writer, t: cx_declaration.Type, is_param: bo
                 }
 
                 try writer.writeAll(")");
+            } else if (std.mem.eql(u8, name, "va_list")) {
+                try writer.writeAll("*opaque{}");
+            } else if (std.mem.eql(u8, name, "size_t")) {
+                try writer.writeAll("usize");
             } else {
                 try writer.writeAll(name);
             }

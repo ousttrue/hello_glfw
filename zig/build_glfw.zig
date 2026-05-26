@@ -28,6 +28,11 @@ const srcs_win32 = [_][]const u8{
     "wgl_context.c",
 };
 
+const flags_win32 = [_][]const u8{
+    "-D_WIN32",
+    "-D_GLFW_WIN32",
+};
+
 const srcs_posix = [_][]const u8{
     "posix_module.c",
     "posix_time.c",
@@ -90,13 +95,15 @@ pub fn build(
     });
 
     if (target.result.os.tag == .windows) {
-        lib.addCSourceFiles(.{
+        mod.addCSourceFiles(.{
             .root = glfw_dep.path("src"),
             .files = &(srcs ++ srcs_win32),
+            .flags = &flags_win32,
         });
+        mod.linkSystemLibrary("gdi32", .{});
     } else {
         // wayland
-        lib.addCSourceFiles(.{
+        mod.addCSourceFiles(.{
             .root = glfw_dep.path("src"),
             .files = &(srcs ++ srcs_posix ++ srcs_wayland ++ srcs_x11),
             .flags = &flags_wayland,
@@ -127,7 +134,7 @@ pub fn build(
             }
         }
 
-        lib.addIncludePath(lib.getEmittedIncludeTree());
+        mod.addIncludePath(lib.getEmittedIncludeTree());
     }
 
     return lib;
