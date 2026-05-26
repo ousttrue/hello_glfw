@@ -9,10 +9,12 @@ glfw simple project starter.
 | wayland  | ok   |
 | msvc     |      |
 
-## cmake-vulkan
-
-## cmake-d3d
-
 ## zig
 
-## zig-sokol
+- sokol(use glfw window)
+- imgui(c++ mangling)
+
+| platform           | desktop | note |
+| ------------------ | ------- | ---- |
+| x86_64-linux-gnu   | wayland | ok   |
+| x86_64-windows-gnu |         | ok   |
