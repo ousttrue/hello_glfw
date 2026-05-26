@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const c = @import("cindex");
 
 const DEFAULT_ARGS = [_][*:0]const u8{
@@ -8,7 +9,7 @@ const DEFAULT_ARGS = [_][*:0]const u8{
     // "--driver-mode=cpp",
     // "-fc++-abi=itanium",
     // "-fclang-abi-compat=17",
-    "--target=x86_64-windows-gnu",
+    if(builtin.os.tag==.windows) "--target=x86_64-windows-gnu" else "--target=x86_64-linux-gnu",
 };
 
 const MSVC_ARGS = [_][*:0]const u8{
@@ -54,9 +55,10 @@ pub fn deinit(this: *@This()) void {
 }
 
 fn allocFullpathDir(io: std.Io, allocator: std.mem.Allocator, src: [:0]const u8) ![]const u8 {
-    var realpath_buf: [1024]u8 = undefined;
-    const size = try std.Io.Dir.cwd().realPathFile(io, src, &realpath_buf);
-    const dir = std.fs.path.dirname(realpath_buf[0..size]).?;
+    // var realpath_buf: [1024]u8 = undefined;
+    const realpath = try std.Io.Dir.cwd().realPathFileAlloc(io, src, allocator);
+    defer allocator.free(realpath);
+    const dir = std.fs.path.dirname(realpath).?;
     return try allocator.dupe(u8, dir);
 }
 

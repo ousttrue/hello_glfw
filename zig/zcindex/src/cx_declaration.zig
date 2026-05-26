@@ -537,7 +537,9 @@ pub const Type = union(enum) {
 // https://github.com/ousttrue/luajitffi/blob/master/clangffi/types.lua
 fn createFromType(allocator: std.mem.Allocator, cx_type: c.CXType) !Type {
     return switch (cx_type.kind) {
-        c.CXType_Void => Type{ .value = .void },
+        c.CXType_Void,
+        c.CXType_Unexposed,
+        => Type{ .value = .void },
         c.CXType_Bool => Type{ .value = .bool },
         c.CXType_Char_S, c.CXType_SChar => Type{ .value = .i8 },
         c.CXType_Short => Type{ .value = .i16 },
@@ -593,7 +595,11 @@ fn createFromType(allocator: std.mem.Allocator, cx_type: c.CXType) !Type {
             // };
             break :blk .{ .value = .void };
         },
-        c.CXType_Elaborated => blk: {
+        c.CXType_Elaborated,
+        c.CXType_Record,
+        c.CXType_Enum,
+        c.CXType_Typedef,
+        => blk: {
             // struct
             const spelling = CXString.initFromTypeSpelling(cx_type);
             break :blk .{

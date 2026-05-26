@@ -34,7 +34,7 @@ const samples = [_]Sample{
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
-    std.debug.print("target => {s}", .{try target.result.linuxTriple(b.allocator)});
+    std.debug.print("target => {s}\n", .{try target.result.linuxTriple(b.allocator)});
     const optimize = b.standardOptimizeOption(.{});
 
     const sokol_dep = b.dependency("sokol", .{
