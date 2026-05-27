@@ -4,15 +4,13 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+
         {
             "type": "lldb",
             "request": "launch",
             "name": "Launch",
-            "program": "${workspaceFolder}/zig-out/bin/cltgen",
+            "program": "${workspaceFolder}/zig-out/bin/glfw_imgui_clang_sokol.exe",
             "args": [
-                "src/imgui_cltgen.h",
-                "-I",
-                "../../limgui/_external/imgui/imgui",
             ],
             "cwd": "${workspaceFolder}"
         },

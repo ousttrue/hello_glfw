@@ -168,7 +168,7 @@ pub fn main() !void {
     _ = imgui.ImGui_ImplGlfw_InitForOpenGL(window, true);
     defer imgui.ImGui_ImplGlfw_Shutdown();
     _ = imgui_sokol.ImGui_ImplSokol_Init(&.{});
-    defer imgui_sokol.ImGui_ImplSokol_Shutdown();
+    //defer imgui_sokol.ImGui_ImplSokol_Shutdown();
 
     // a vertex buffer
     const vertices = [_]f32{
