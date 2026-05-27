@@ -147,6 +147,9 @@ pub fn build(b: *std.Build) !void {
     // if (b.option(bool, "samples", "samples") orelse false) {
     for (samples) |sample| {
         const exe = try build_sample(b, target, optimize, sample, sokol_dep, glfw_lib.getEmittedIncludeTree());
+        for (installs) |install| {
+            exe.step.dependOn(&install.step);
+        }
         const mod = exe.root_module;
 
         mod.addImport("glfw", glfw_lib.root_module);
